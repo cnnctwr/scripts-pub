@@ -46,6 +46,7 @@ try {
     }
 } catch {
     # Vorab-Pruefung fehlgeschlagen - wird spaeter beim vollstaendigen Download erneut versucht
+    Write-Host "Vorab-Pruefung fehlgeschlagen: $_"
 }
 
 # --- Installierte Version aus der Registry lesen -----------------------------
@@ -56,6 +57,9 @@ $Installed = Get-ItemProperty `
     -ErrorAction SilentlyContinue |
     Where-Object { $_.DisplayName -like "*CARO*" } |
     Select-Object -First 1
+
+Write-Host "Installierte Version (aus Registry): $Installed"
+Write-Host "Online gefundene Version: $VerfuegbareVersion"
 
 $InstalliertVersion = $null
 if ($Installed -and $Installed.DisplayName -match '(\d{4}\.\d+\.\d+(\.\d+)?)') {
