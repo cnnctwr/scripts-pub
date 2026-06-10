@@ -22,12 +22,10 @@ try {
     # Dateigroesse ermitteln
     $Head     = Invoke-WebRequest -Uri $DownloadUrl -Method Head -UseBasicParsing
     $FileSize = [long]$Head.Headers['Content-Length']
-    $RangeStart = [Math]::Max(0, $FileSize - 1000)
-
     # Nur die letzten 1000 Byte laden
     $ProgressPreference = 'SilentlyContinue'
     $TailBytes = (Invoke-WebRequest -Uri $DownloadUrl `
-        -Headers @{ Range = "bytes=$RangeStart-" } `
+        -Headers @{ Range = "bytes=-1000" } `
         -UseBasicParsing).Content
 
     # ZIP-Central-Directory nach MSI-Dateinamen durchsuchen
@@ -38,7 +36,7 @@ try {
             if ($NameLen -gt 0 -and ($i + 46 + $NameLen) -le $TailBytes.Length) {
                 $EntryName = [System.Text.Encoding]::UTF8.GetString($TailBytes, $i + 46, $NameLen)
                 if ($EntryName -like "*.msi") {
-                    if ($EntryName -match '(\d{4}\.\d+\.\d+\.\d+)') {
+                    if ($EntryName -match '(\d{4}\.\d+\.\d+(\.\d+)?)') {
                         $VerfuegbareVersion = $matches[1]
                     }
                     break
@@ -60,48 +58,77 @@ $Installed = Get-ItemProperty `
     Select-Object -First 1
 
 $InstalliertVersion = $null
-if ($Installed -and $Installed.DisplayName -match '(\d{4}\.\d+\.\d+\.\d+)') {
+if ($Installed -and $Installed.DisplayName -match '(\d{4}\.\d+\.\d+(\.\d+)?)') {
     $InstalliertVersion = $matches[1]
 }
 
 # --- Versionsvergleich und Benutzerentscheidung ------------------------------
 
 if ($VerfuegbareVersion -and $InstalliertVersion) {
-    $NeuV  = [Version]$VerfuegbareVersion
-    $AltV  = [Version]$InstalliertVersion
+    $NeuV = [Version]$VerfuegbareVersion
+    $AltV = [Version]$InstalliertVersion
 
-    if ($NeuV -le $AltV) {
+    if ($NeuV -eq $AltV) {
+        # Fall 1: Gleiche Version
         Write-Host ""
-        Write-Host "Verfuegbare Version:  $VerfuegbareVersion"
-        Write-Host "Installierte Version: $InstalliertVersion"
+        Write-Host "Version online:      $VerfuegbareVersion"
+        Write-Host "Version installiert: $InstalliertVersion"
         Write-Host ""
-        Write-Host "Kein Update erforderlich."
+        Write-Host "Kein Update erforderlich. Die installierte Version ist aktuell."
         Write-Host ""
         Read-Host "Taste druecken zum Beenden"
         exit 0
+    } elseif ($NeuV -lt $AltV) {
+        # Fall 3: Online-Version aelter als installierte Version
+        Write-Host ""
+        Write-Host "ACHTUNG: Die bereitgestellte Version traegt ein aelteres Datum."
+        Write-Host ""
+        Write-Host "Version online:      $VerfuegbareVersion"
+        Write-Host "Version installiert: $InstalliertVersion"
+        Write-Host ""
+        Write-Host "Moeglicher Grund: Rollback durch den Hersteller."
+        Write-Host "Die Installationsdatei, das Handbuch und die Lizenzbestimmungen"
+        Write-Host "liegen nach dem Download in folgendem Verzeichnis:"
+        Write-Host $ExtractDir
+        Write-Host ""
+        Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie den Lizenzbedingungen zu"
+        Write-Host "und installieren diese aeltere Version."
+        Write-Host ""
+        $Antwort = Read-Host "Wollen Sie dennoch fortfahren? (J/N)"
+        if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
+    } else {
+        # Fall 2: Neue Version verfuegbar
+        Write-Host ""
+        Write-Host "Neue Version der CARO Suite gefunden."
+        Write-Host ""
+        Write-Host "Version online:      $VerfuegbareVersion"
+        Write-Host "Version installiert: $InstalliertVersion"
+        Write-Host ""
+        Write-Host "Die Installationsdatei, das Handbuch und die Lizenzbestimmungen"
+        Write-Host "liegen nach dem Download in folgendem Verzeichnis:"
+        Write-Host $ExtractDir
+        Write-Host ""
+        Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie den Lizenzbedingungen zu"
+        Write-Host "und installieren die neueste Version der CARO Suite."
+        Write-Host ""
+        $Antwort = Read-Host "Wollen Sie fortfahren? (J/N)"
+        if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
     }
-}
-
-# Neue Version oder Erstinstallation
-Write-Host ""
-if ($VerfuegbareVersion) {
-    Write-Host "Neue Version der CARO Suite gefunden: $VerfuegbareVersion"
 } else {
-    Write-Host "CARO Suite - Update / Installation"
+    # Erstinstallation oder Versionsermittlung fehlgeschlagen
+    Write-Host ""
+    Write-Host "CARO Suite - Installation"
+    Write-Host ""
+    Write-Host "Die Installationsdatei, das Handbuch und die Lizenzbestimmungen"
+    Write-Host "liegen nach dem Download in folgendem Verzeichnis:"
+    Write-Host $ExtractDir
+    Write-Host ""
+    Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie den Lizenzbedingungen zu"
+    Write-Host "und installieren die CARO Suite."
+    Write-Host ""
+    $Antwort = Read-Host "Wollen Sie fortfahren? (J/N)"
+    if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
 }
-if ($InstalliertVersion) {
-    Write-Host "Installierte Version:  $InstalliertVersion"
-    Write-Host "Verfuegbare Version:   $VerfuegbareVersion"
-}
-Write-Host ""
-Write-Host "Die Lizenzbestimmungen liegen nach dem Download lesbar in folgendem Verzeichnis:"
-Write-Host $ExtractDir
-Write-Host ""
-Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie diesen Bedingungen zu"
-Write-Host "und installieren die neueste Version der CARO Suite."
-Write-Host ""
-$Antwort = Read-Host "Wollen Sie fortfahren? (J/N)"
-if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
 
 # --- Download ----------------------------------------------------------------
 
