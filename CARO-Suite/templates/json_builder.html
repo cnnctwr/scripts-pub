@@ -1,0 +1,794 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTS JSON Builder</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background-color: #00bcd4;
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .controls input[type="file"],
+        button {
+            padding: 10px 15px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .file-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 300px;
+        }
+        .file-input-wrapper input[type="file"] {
+            display: none;
+        }
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background-color: #e0f2f1;
+            color: #00695c;
+            border: 2px solid #00bcd4;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .file-input-label:hover {
+            background-color: #b2dfdb;
+            border-color: #0097a7;
+        }
+        .file-input-label::before {
+            content: "📁";
+            font-size: 16px;
+        }
+        .file-name-display {
+            flex: 1;
+            min-width: 250px;
+            padding: 10px 15px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            color: #666;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        button {
+            background-color: #00bcd4;
+            color: white;
+        }
+        button:hover {
+            background-color: #0097a7;
+        }
+        .main-container {
+            display: grid;
+            grid-template-columns: 70% 30%;
+            gap: 20px;
+        }
+        @media (max-width: 1200px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+        .section {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #00bcd4;
+            border-bottom: 2px solid #00bcd4;
+            padding-bottom: 10px;
+        }
+        .form-section {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .form-group {
+            margin-bottom: 15px;
+            padding: 12px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            background-color: #fafafa;
+        }
+        .form-group.fixed {
+            background-color: #f0f0f0;
+            opacity: 0.7;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        .label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+        }
+        textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+        .checkbox-group label {
+            display: inline;
+            font-weight: normal;
+            margin: 0;
+            cursor: pointer;
+        }
+        .lang-inputs {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .lang-input-group {
+            margin-bottom: 10px;
+        }
+        .lang-input-group label {
+            font-size: 0.9em;
+            margin-bottom: 4px;
+        }
+        .lang-input-group input {
+            margin-bottom: 0;
+        }
+        #jsonOutput {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            height: 600px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .error {
+            color: #d32f2f;
+            background-color: #ffebee;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #d32f2f;
+        }
+        .success {
+            color: #388e3c;
+            background-color: #e8f5e9;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #388e3c;
+        }
+        .parameter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .parameter-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #fafafa;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .parameter-header {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            gap: 8px;
+        }
+        .parameter-header input[type="checkbox"] {
+            flex-shrink: 0;
+            margin: 0;
+        }
+        .parameter-info {
+            flex: 1;
+        }
+        .parameter-name {
+            font-weight: bold;
+            color: #333;
+        }
+        .parameter-variable {
+            font-size: 0.85em;
+            color: #666;
+        }
+        .parameter-defaultvalue {
+            padding: 8px;
+            background-color: #f0f8ff;
+            border-left: 3px solid #00bcd4;
+            border-radius: 2px;
+            width: 100%;
+            display: none;
+        }
+        .parameter-defaultvalue.visible {
+            display: block;
+        }
+        .parameter-defaultvalue label {
+            display: block;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-bottom: 4px;
+            color: #00695c;
+        }
+        .parameter-defaultvalue input[type="text"],
+        .parameter-defaultvalue input[type="number"],
+        .parameter-defaultvalue input[type="password"],
+        .parameter-defaultvalue input[type="checkbox"],
+        .parameter-defaultvalue textarea {
+            margin: 0;
+            width: 100%;
+        }
+        .hidden {
+            display: none;
+        }
+        .section-divider {
+            border-top: 2px solid #ddd;
+            margin: 20px 0;
+            padding-top: 20px;
+        }
+        .json-highlight {
+            background-color: #fff59d !important;
+            animation: highlightPulse 1.5s ease-in-out;
+        }
+        @keyframes highlightPulse {
+            0% { background-color: #fff59d; }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CTS JSON Template Builder</h1>
+        <p>Bearbeite die Konfiguration für Active Directory Benutzer</p>
+    </div>
+
+    <div class="controls">
+        <div class="file-input-wrapper">
+            <label for="jsonFileInput" class="file-input-label">Datei wählen</label>
+            <input type="file" id="jsonFileInput" accept=".json" onchange="updateFileName()" />
+            <div class="file-name-display" id="fileNameDisplay">Keine Datei ausgewählt</div>
+        </div>
+        <button onclick="loadJSONFile()">📂 JSON laden</button>
+        <button onclick="downloadJSON()">💾 JSON herunterladen</button>
+    </div>
+    
+    <div id="messageContainer"></div>
+
+    <div class="main-container">
+        <div class="section form-section">
+            <h2>Einstellungen</h2>
+            
+            <!-- ID Einstellung -->
+            <div class="form-group">
+                <label for="idInput">Template ID</label>
+                <div style="display: flex; gap: 5px;">
+                    <span style="padding: 10px; background-color: #e0f2f1; border-radius: 4px; border: 1px solid #b2dfdb;">cts.manage.</span>
+                    <input type="text" id="idInput" placeholder="z.B. NewUserMarketing" style="flex: 1;">
+                </div>
+                <small style="color: #666;">Das Präfix "cts.manage." wird automatisch hinzugefügt</small>
+            </div>
+
+            <!-- Name Einstellungen -->
+            <div class="form-group section-divider">
+                <label>Template Name (Mehrsprachig)</label>
+                <div class="lang-inputs">
+                    <div class="lang-input-group">
+                        <label>Englisch (en-US)</label>
+                        <input type="text" id="nameEnUS" placeholder="z.B. Create new user">
+                    </div>
+                    <div class="lang-input-group">
+                        <label>Englisch (en-GB)</label>
+                        <input type="text" id="nameEnGB" placeholder="z.B. Create new user">
+                    </div>
+                    <div class="lang-input-group">
+                        <label>Deutsch (de-DE)</label>
+                        <input type="text" id="nameDeDE" placeholder="z.B. Neuen Benutzer erzeugen">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Beschreibung Einstellungen -->
+            <div class="form-group">
+                <label>Template Beschreibung (Mehrsprachig)</label>
+                <div class="lang-inputs">
+                    <div class="lang-input-group">
+                        <label>Englisch (en-US)</label>
+                        <textarea id="descEnUS" placeholder="Beschreibung..."></textarea>
+                    </div>
+                    <div class="lang-input-group">
+                        <label>Englisch (en-GB)</label>
+                        <textarea id="descEnGB" placeholder="Beschreibung..."></textarea>
+                    </div>
+                    <div class="lang-input-group">
+                        <label>Deutsch (de-DE)</label>
+                        <textarea id="descDeDE" placeholder="Beschreibung..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameter Auswahl -->
+            <div class="form-group section-divider">
+                <label>Konfigurationsparameter</label>
+                <small style="color: #666; display: block; margin-bottom: 10px;">Wähle aus, welche Parameter eingeblendet sein sollen (LdapOuResource ist immer fix)</small>
+                <div id="parameterList" class="parameter-list"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>JSON Vorschau</h2>
+            <div id="jsonOutput">
+                <span style="color: #999;">JSON wird hier angezeigt, sobald eine Datei geladen wurde...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let jsonData = {};
+        let parameterStates = {}; // Speichert, welche Parameter sichtbar/enabled sind
+
+        const FIXED_PARAMETERS = [
+            "cts.createNewAccount.LdapOuResource",
+            "cts.createNewAccount.ModificationComment",
+            "cts.modificationComment"
+        ];
+
+        // Dateinamen anzeigen
+        function updateFileName() {
+            const fileInput = document.getElementById('jsonFileInput');
+            const fileNameDisplay = document.getElementById('fileNameDisplay');
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = fileInput.files[0].name;
+            } else {
+                fileNameDisplay.textContent = 'Keine Datei ausgewählt';
+            }
+        }
+
+        // Meldung anzeigen
+        function showMessage(message, type = 'error') {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="${type}">${message}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        // JSON Datei laden
+        function loadJSONFile() {
+            const fileInput = document.getElementById('jsonFileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                showMessage('Bitte wähle eine JSON-Datei aus.', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    jsonData = JSON.parse(e.target.result);
+                    parameterStates = {};
+                    initializeForm();
+                    updateJSONOutput();
+                    showMessage('JSON-Datei erfolgreich geladen!', 'success');
+                } catch (error) {
+                    showMessage('Ungültige JSON-Datei: ' + error.message, 'error');
+                }
+            };
+            reader.onerror = function() {
+                showMessage('Fehler beim Lesen der Datei.', 'error');
+            };
+            reader.readAsText(file);
+        }
+
+        // Formular initialisieren
+        function initializeForm() {
+            // ID setzen
+            const id = jsonData.Id || "cts.manage.activeDirectoryStandardUser";
+            const idPart = id.replace("cts.manage.", "");
+            document.getElementById('idInput').value = idPart;
+
+            // Namen setzen
+            if (jsonData.Name && jsonData.Name.Strings) {
+                document.getElementById('nameEnUS').value = jsonData.Name.Strings["en-US"] || "";
+                document.getElementById('nameEnGB').value = jsonData.Name.Strings["en-GB"] || "";
+                document.getElementById('nameDeDE').value = jsonData.Name.Strings["de-DE"] || "";
+            }
+
+            // Beschreibungen setzen
+            if (jsonData.Description && jsonData.Description.Strings) {
+                document.getElementById('descEnUS').value = jsonData.Description.Strings["en-US"] || "";
+                document.getElementById('descEnGB').value = jsonData.Description.Strings["en-GB"] || "";
+                document.getElementById('descDeDE').value = jsonData.Description.Strings["de-DE"] || "";
+            }
+
+            // Parameter Liste erstellen
+            loadParameterList();
+
+            // Event Listener hinzufügen
+            document.getElementById('idInput').addEventListener('change', updateJSONOutput);
+            document.getElementById('nameEnUS').addEventListener('change', updateJSONOutput);
+            document.getElementById('nameEnGB').addEventListener('change', updateJSONOutput);
+            document.getElementById('nameDeDE').addEventListener('change', updateJSONOutput);
+            document.getElementById('descEnUS').addEventListener('change', updateJSONOutput);
+            document.getElementById('descEnGB').addEventListener('change', updateJSONOutput);
+            document.getElementById('descDeDE').addEventListener('change', updateJSONOutput);
+        }
+
+        // Parameter Liste laden
+        function loadParameterList() {
+            const parameterList = document.getElementById('parameterList');
+            parameterList.innerHTML = '';
+
+            if (!jsonData.ConfigurationParameterDefinitions || jsonData.ConfigurationParameterDefinitions.length === 0) {
+                parameterList.innerHTML = '<p style="color: #999;">Keine Parameter gefunden.</p>';
+                return;
+            }
+
+            jsonData.ConfigurationParameterDefinitions.forEach((param, index) => {
+                const paramId = param.Id || "";
+                const isFixed = FIXED_PARAMETERS.includes(paramId);
+                
+                if (isFixed) {
+                    return; // Überspringen
+                }
+
+                // Überspringe DataType 11 (DateTime) - AccountExpires
+                if (param.DataType === 11) {
+                    return;
+                }
+
+                // Initiale Sichtbarkeit laden
+                if (!parameterStates.hasOwnProperty(index)) {
+                    parameterStates[index] = {
+                        enabled: param.IsEnabledExpression !== "false",
+                        visible: param.IsVisibleExpression !== "false"
+                    };
+                }
+
+                const paramName = param.VariableName || paramId;
+                const paramLabel = param.Label?.Strings?.["de-DE"] || param.Label?.Strings?.["en-US"] || paramName;
+                const dataType = param.DataType || 0;
+
+                const itemEl = document.createElement('div');
+                itemEl.className = 'parameter-item';
+                
+                // Header mit Checkbox
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'parameter-header';
+                headerDiv.innerHTML = `
+                    <input type="checkbox" id="param_${index}" ${parameterStates[index].visible ? 'checked' : ''} 
+                        onchange="toggleParameter(${index})">
+                    <div class="parameter-info">
+                        <div class="parameter-name">${paramLabel}</div>
+                        <div class="parameter-variable">${paramId}</div>
+                    </div>
+                `;
+                itemEl.appendChild(headerDiv);
+
+                // DefaultValue Eingabefeld
+                if (param.DefaultValue !== undefined && param.DefaultValue !== null) {
+                    const defaultValueDiv = document.createElement('div');
+                    defaultValueDiv.className = 'parameter-defaultvalue';
+                    if (parameterStates[index].visible) {
+                        defaultValueDiv.classList.add('visible');
+                    }
+                    defaultValueDiv.id = `defaultvalue_${index}`;
+
+                    let inputHTML = '<label>Default Value:</label>';
+
+                    // Je nach DataType unterschiedliche Input-Felder
+                    switch (dataType) {
+                        case 0: // Boolean
+                            inputHTML += `<input type="checkbox" id="dv_${index}" ${param.DefaultValue ? 'checked' : ''} 
+                                onchange="updateDefaultValue(${index}, this.checked, 'boolean')">`;
+                            break;
+                        case 1: // Integer
+                            inputHTML += `<input type="number" id="dv_${index}" value="${param.DefaultValue}" 
+                                onchange="updateDefaultValue(${index}, this.value, 'integer')">`;
+                            break;
+                        case 3: // String
+                            inputHTML += `<input type="text" id="dv_${index}" value="${param.DefaultValue}" 
+                                onchange="updateDefaultValue(${index}, this.value, 'string')">`;
+                            break;
+                        case 13: // String List (Array)
+                            const arrayValues = Array.isArray(param.DefaultValue) ? param.DefaultValue : [param.DefaultValue];
+                            inputHTML += '<div style="display: flex; flex-direction: column; gap: 4px;">';
+                            arrayValues.forEach((val, i) => {
+                                inputHTML += `<input type="text" data-index="${i}" value="${val}" 
+                                    onchange="updateDefaultValueArray(${index}, this.value, this.dataset.index)">`;
+                            });
+                            inputHTML += `<button onclick="addArrayItem(${index})" style="margin-top: 4px; padding: 4px; background-color: #e0f2f1; border: 1px solid #00bcd4; cursor: pointer;">+ Item</button>`;
+                            inputHTML += '</div>';
+                            break;
+                        case 102: // Password
+                            inputHTML += `<input type="password" id="dv_${index}" value="${param.DefaultValue}" 
+                                onchange="updateDefaultValue(${index}, this.value, 'password')">`;
+                            break;
+                        case 110: // Account Reference (Read-only)
+                            inputHTML += `<input type="text" value="${JSON.stringify(param.DefaultValue)}" disabled 
+                                style="background-color: #e0e0e0; cursor: not-allowed;">`;
+                            break;
+                        default:
+                            inputHTML += `<input type="text" id="dv_${index}" value="${param.DefaultValue}" 
+                                onchange="updateDefaultValue(${index}, this.value, 'string')">`;
+                    }
+
+                    defaultValueDiv.innerHTML = inputHTML;
+                    itemEl.appendChild(defaultValueDiv);
+                }
+
+                parameterList.appendChild(itemEl);
+            });
+        }
+
+        // DefaultValue aktualisieren
+        function updateDefaultValue(index, value, type) {
+            if (jsonData.ConfigurationParameterDefinitions[index]) {
+                const param = jsonData.ConfigurationParameterDefinitions[index];
+                
+                switch (type) {
+                    case 'boolean':
+                        param.DefaultValue = value;
+                        break;
+                    case 'integer':
+                        param.DefaultValue = parseInt(value) || 0;
+                        break;
+                    case 'password':
+                    case 'string':
+                    default:
+                        param.DefaultValue = value;
+                }
+                
+                updateJSONOutput();
+            }
+        }
+
+        // Array-DefaultValue aktualisieren
+        function updateDefaultValueArray(index, value, arrayIndex) {
+            if (jsonData.ConfigurationParameterDefinitions[index]) {
+                const param = jsonData.ConfigurationParameterDefinitions[index];
+                if (Array.isArray(param.DefaultValue)) {
+                    param.DefaultValue[parseInt(arrayIndex)] = value;
+                    updateJSONOutput();
+                }
+            }
+        }
+
+        // Array-Item hinzufügen
+        function addArrayItem(index) {
+            if (jsonData.ConfigurationParameterDefinitions[index]) {
+                const param = jsonData.ConfigurationParameterDefinitions[index];
+                if (Array.isArray(param.DefaultValue)) {
+                    param.DefaultValue.push("");
+                    loadParameterList();
+                    updateJSONOutput();
+                }
+            }
+        }
+
+        // Parameter Toggle
+        function toggleParameter(index) {
+            const checkbox = document.getElementById(`param_${index}`);
+            const isVisible = checkbox.checked;
+            const defaultValueDiv = document.getElementById(`defaultvalue_${index}`);
+            
+            parameterStates[index].visible = isVisible;
+            parameterStates[index].enabled = isVisible;
+
+            // DefaultValue Feld anzeigen/verbergen
+            if (defaultValueDiv) {
+                if (isVisible) {
+                    defaultValueDiv.classList.add('visible');
+                } else {
+                    defaultValueDiv.classList.remove('visible');
+                }
+            }
+
+            // JSON aktualisieren
+            if (jsonData.ConfigurationParameterDefinitions[index]) {
+                const param = jsonData.ConfigurationParameterDefinitions[index];
+                
+                if (!isVisible) {
+                    param.IsEnabledExpression = "false";
+                    param.IsVisibleExpression = "false";
+                } else {
+                    param.IsEnabledExpression = "true";
+                    param.IsVisibleExpression = "true";
+                }
+                
+                // Stelle sicher, dass beide Felder existieren
+                if (!param.hasOwnProperty('IsEnabledExpression')) {
+                    param.IsEnabledExpression = isVisible ? "true" : "false";
+                }
+                if (!param.hasOwnProperty('IsVisibleExpression')) {
+                    param.IsVisibleExpression = isVisible ? "true" : "false";
+                }
+            }
+
+            updateJSONOutput();
+            
+            // Hervorheben der geänderten Zeile im JSON mit Sprung zur richtigen Position
+            const paramId = jsonData.ConfigurationParameterDefinitions[index].Id;
+            highlightParameterInJSON(paramId);
+        }
+
+        // Zum Parameter in JSON springen und IsEnabled/IsVisible Felder hervorheben
+        function highlightParameterInJSON(paramId) {
+            const jsonOutput = document.getElementById('jsonOutput');
+            const fullText = jsonOutput.textContent;
+            const lines = fullText.split('\n');
+            
+            // Finde die Zeile mit der Parameter ID
+            let paramStartLine = -1;
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes(`"Id": "${paramId}"`)) {
+                    paramStartLine = i;
+                    break;
+                }
+            }
+            
+            if (paramStartLine === -1) {
+                return;
+            }
+
+            // Finde IsEnabledExpression und IsVisibleExpression Zeilen nach diesem Parameter
+            let enabledLine = -1;
+            let visibleLine = -1;
+            let blockEndLine = -1;
+
+            for (let i = paramStartLine; i < lines.length; i++) {
+                if (lines[i].includes('"IsEnabledExpression"')) {
+                    enabledLine = i;
+                }
+                if (lines[i].includes('"IsVisibleExpression"')) {
+                    visibleLine = i;
+                }
+                // Block endet beim nächsten }, (nächster Parameter)
+                if (i > paramStartLine && lines[i].trim() === '},') {
+                    blockEndLine = i;
+                    break;
+                }
+            }
+
+            // Scroll zu IsEnabledExpression
+            if (enabledLine !== -1) {
+                const lineHeight = parseInt(window.getComputedStyle(jsonOutput).lineHeight);
+                jsonOutput.scrollTop = enabledLine * lineHeight - jsonOutput.clientHeight / 3;
+
+                // Highlight beide Zeilen
+                setTimeout(() => {
+                    const linesArray = jsonOutput.textContent.split('\n');
+                    const highlightedHtml = linesArray.map((line, idx) => {
+                        if (idx === enabledLine || idx === visibleLine) {
+                            return `<span class="json-highlight">${escapeHtml(line)}</span>`;
+                        }
+                        return escapeHtml(line);
+                    }).join('\n');
+                    
+                    jsonOutput.innerHTML = highlightedHtml;
+                    
+                    // Nach 1.5s wieder normale Anzeige
+                    setTimeout(() => {
+                        updateJSONOutput();
+                    }, 1500);
+                }, 100);
+            }
+        }
+
+        // HTML escapen
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // JSON Output aktualisieren
+        function updateJSONOutput() {
+            // ID aktualisieren
+            const idPart = document.getElementById('idInput').value || "activeDirectoryStandardUser";
+            jsonData.Id = `cts.manage.${idPart}`;
+
+            // Namen aktualisieren
+            if (!jsonData.Name) {
+                jsonData.Name = { Strings: {} };
+            }
+            if (!jsonData.Name.Strings) {
+                jsonData.Name.Strings = {};
+            }
+            jsonData.Name.Strings["en-US"] = document.getElementById('nameEnUS').value;
+            jsonData.Name.Strings["en-GB"] = document.getElementById('nameEnGB').value;
+            jsonData.Name.Strings["de-DE"] = document.getElementById('nameDeDE').value;
+
+            // Beschreibungen aktualisieren
+            if (!jsonData.Description) {
+                jsonData.Description = { Strings: {} };
+            }
+            if (!jsonData.Description.Strings) {
+                jsonData.Description.Strings = {};
+            }
+            jsonData.Description.Strings["en-US"] = document.getElementById('descEnUS').value;
+            jsonData.Description.Strings["en-GB"] = document.getElementById('descEnGB').value;
+            jsonData.Description.Strings["de-DE"] = document.getElementById('descDeDE').value;
+
+            // JSON Display
+            const jsonString = JSON.stringify(jsonData, null, 2);
+            document.getElementById('jsonOutput').textContent = jsonString;
+        }
+
+        // JSON herunterladen
+        function downloadJSON() {
+            if (!jsonData.Id) {
+                showMessage('Bitte laden Sie zuerst eine JSON-Datei.', 'error');
+                return;
+            }
+
+            const dataStr = JSON.stringify(jsonData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${jsonData.Id}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
