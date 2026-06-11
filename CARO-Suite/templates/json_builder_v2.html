@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CTS JSON Builder</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    background: #f0f4f8;
+    color: #2d3748;
+    min-height: 100vh;
+  }
+
+  /* ── Topbar ── */
+  .topbar {
+    background: #00bcd4;
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar h1 { font-size: 1.2rem; font-weight: 600; }
+  .topbar p  { font-size: .8rem; opacity: .85; margin-top: 2px; }
+  .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 6px; border: none;
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: all .15s;
+  }
+  .btn-light  { background: rgba(255,255,255,.2); color: white; }
+  .btn-light:hover { background: rgba(255,255,255,.35); }
+  .btn-white  { background: white; color: #00bcd4; }
+  .btn-white:hover { background: #e0f7fa; }
+  .btn-save   { background: #00897b; color: white; }
+  .btn-save:hover { background: #00695c; }
+
+  #fileInput { display: none; }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .preview-panel { display: none; }
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #323232; color: white; padding: 10px 20px; border-radius: 24px;
+    font-size: .85rem; opacity: 0; transition: opacity .3s; z-index: 999;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ── Template Meta Card ── */
+  .meta-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .meta-card-header {
+    background: #e0f7fa;
+    padding: 12px 18px;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #00838f;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .meta-card-body { padding: 16px 18px; display: grid; gap: 12px; }
+
+  /* ── Accordion Section ── */
+  .accordion {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .accordion-header {
+    padding: 14px 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    user-select: none;
+    transition: background .15s;
+  }
+  .accordion-header:hover { background: #f7fafa; }
+  .accordion-header.open  { border-bottom: 1px solid #e2e8f0; }
+
+  .acc-icon { font-size: 1.1rem; width: 28px; text-align: center; }
+  .acc-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: .95rem;
+  }
+  .acc-badge {
+    background: #e0f7fa; color: #00838f;
+    font-size: .72rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 12px;
+  }
+  .acc-badge.warn { background: #fff3e0; color: #e65100; }
+  .acc-chevron {
+    font-size: .75rem; color: #aaa;
+    transition: transform .2s;
+  }
+  .accordion-header.open .acc-chevron { transform: rotate(90deg); }
+
+  .accordion-body {
+    display: none;
+    padding: 16px 18px;
+  }
+  .accordion-body.open { display: block; }
+
+  /* ── Field Grid ── */
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .field-grid.full { grid-template-columns: 1fr; }
+  .field-grid.two  { grid-template-columns: 1fr 1fr; }
+
+  /* ── Field ── */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #4a5568;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .badge-auto {
+    background: #f0fff4; color: #276749;
+    font-size: .65rem; font-weight: 700;
+    padding: 1px 6px; border-radius: 10px;
+    border: 1px solid #c6f6d5;
+  }
+  .badge-fixed {
+    background: #f7f7f7; color: #999;
+    font-size: .65rem; font-weight: 700;
+    padding: 1px 6px; border-radius: 10px;
+    border: 1px solid #ddd;
+  }
+  .badge-required {
+    background: #fff5f5; color: #c53030;
+    font-size: .65rem;
+    padding: 1px 6px; border-radius: 10px;
+    border: 1px solid #fed7d7;
+  }
+  .field-hint {
+    font-size: .72rem;
+    color: #718096;
+    margin-top: 1px;
+  }
+  .field input[type="text"],
+  .field input[type="password"],
+  .field input[type="number"],
+  .field textarea {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: .875rem;
+    font-family: inherit;
+    transition: border .15s, box-shadow .15s;
+    background: white;
+  }
+  .field input:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: #00bcd4;
+    box-shadow: 0 0 0 3px rgba(0,188,212,.15);
+  }
+  .field input.auto-field {
+    background: #f8fff8;
+    border-color: #c6f6d5;
+    color: #276749;
+    font-style: italic;
+  }
+  .field input:disabled,
+  .field textarea:disabled {
+    background: #f7f7f7;
+    color: #999;
+    cursor: not-allowed;
+  }
+  .field textarea { min-height: 70px; resize: vertical; }
+
+  /* Password with toggle */
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 36px; width: 100%; }
+  .pw-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    cursor: pointer; color: #aaa; font-size: .9rem;
+    background: none; border: none; padding: 0;
+  }
+  .pw-eye:hover { color: #555; }
+
+  /* Toggles */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+  }
+  .toggle-row label {
+    font-size: .875rem;
+    color: #2d3748;
+    cursor: pointer;
+    flex: 1;
+  }
+  .toggle {
+    position: relative;
+    width: 36px; height: 20px;
+    flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0;
+    background: #cbd5e0; border-radius: 20px;
+    cursor: pointer; transition: background .2s;
+  }
+  .slider:before {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    left: 3px; top: 3px;
+    background: white; border-radius: 50%;
+    transition: transform .2s;
+  }
+  .toggle input:checked + .slider { background: #00bcd4; }
+  .toggle input:checked + .slider:before { transform: translateX(16px); }
+
+  /* Checkbox group for flags */
+  .flags-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .flag-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s, border .15s;
+  }
+  .flag-item:hover { background: #f0f9ff; border-color: #bee3f8; }
+  .flag-item input { cursor: pointer; accent-color: #00bcd4; }
+  .flag-item span { font-size: .82rem; color: #2d3748; }
+
+  /* ── Preview Panel ── */
+  .preview-panel {
+    position: sticky;
+    top: 76px;
+    align-self: start;
+  }
+  .preview-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    overflow: hidden;
+  }
+  .preview-header {
+    background: #263238;
+    color: white;
+    padding: 12px 16px;
+    font-size: .8rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #jsonOutput {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: .72rem;
+    line-height: 1.5;
+    background: #1e272e;
+    color: #ecf0f1;
+    padding: 14px;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #a0aec0;
+  }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+  .empty-state h2 { font-size: 1.1rem; margin-bottom: 8px; color: #718096; }
+  .empty-state p { font-size: .875rem; }
+
+  /* ── Divider label ── */
+  .section-label {
+    font-size: .7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #a0aec0;
+    margin: 14px 0 8px;
+  }
+
+  /* ── Disabled section overlay ── */
+  .acc-disabled .accordion-body { opacity: .5; pointer-events: none; }
+
+  /* ── Scrollbar ── */
+  #jsonOutput::-webkit-scrollbar { width: 6px; }
+  #jsonOutput::-webkit-scrollbar-track { background: #1e272e; }
+  #jsonOutput::-webkit-scrollbar-thumb { background: #37474f; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div>
+    <h1>🗂 CTS JSON Builder</h1>
+    <p>Active Directory – Benutzer Vorlage konfigurieren</p>
+  </div>
+  <div class="topbar-actions">
+    <label for="fileInput" class="btn btn-light">📂 JSON laden</label>
+    <input type="file" id="fileInput" accept=".json">
+    <button class="btn btn-save" onclick="downloadJSON()">💾 JSON speichern</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div class="layout">
+  <!-- LEFT: FORM -->
+  <div id="formArea">
+    <div class="empty-state" id="emptyState">
+      <div class="icon">📄</div>
+      <h2>Noch keine Datei geladen</h2>
+      <p>Klicke oben auf <strong>JSON laden</strong> und wähle deine<br>
+         <code>.json</code>-Vorlage aus.</p>
+    </div>
+    <div id="formContent" style="display:none"></div>
+  </div>
+
+  <!-- RIGHT: JSON PREVIEW -->
+  <div class="preview-panel">
+    <div class="preview-card">
+      <div class="preview-header">
+        <span>JSON Vorschau</span>
+        <span id="previewLabel" style="opacity:.6;font-weight:400">–</span>
+      </div>
+      <div id="jsonOutput">// Lade eine JSON-Datei…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let jsonData = null;
+
+// ─────────────────────────────────────────────
+// FILE LOADING
+// ─────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      jsonData = JSON.parse(ev.target.result);
+      buildForm();
+      toast('✅ ' + file.name + ' geladen');
+    } catch(err) {
+      toast('❌ Ungültige JSON-Datei: ' + err.message, 4000);
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ─────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────
+let toastTimer;
+function toast(msg, duration = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ─────────────────────────────────────────────
+// DOWNLOAD
+// ─────────────────────────────────────────────
+function downloadJSON() {
+  if (!jsonData) { toast('⚠️ Bitte zuerst eine Datei laden'); return; }
+  const str = JSON.stringify(jsonData, null, 2);
+  const blob = new Blob([str], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (jsonData.Id || 'template') + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('💾 Gespeichert als ' + a.download);
+}
+
+// ─────────────────────────────────────────────
+// UPDATE JSON PREVIEW
+// ─────────────────────────────────────────────
+function updatePreview() {
+  if (!jsonData) return;
+  document.getElementById('jsonOutput').textContent = JSON.stringify(jsonData, null, 2);
+  document.getElementById('previewLabel').textContent = jsonData.Id || '';
+}
+
+// ─────────────────────────────────────────────
+// PARAM HELPERS
+// ─────────────────────────────────────────────
+const ALWAYS_HIDDEN = [
+  'cts.mandatoryLdapParameter.AccountGivennameReplace',
+  'cts.mandatoryLdapParameter.AccountSurnameReplace'
+];
+const FIXED_IDS = [
+  'cts.createNewAccount.LdapOuResource',
+  'cts.modificationComment',
+  'cts.createNewAccount.ModificationComment'
+];
+
+function str(obj, fallback='') {
+  if (!obj) return fallback;
+  if (typeof obj === 'string') return obj;
+  if (obj.Strings) return obj.Strings['de-DE'] || obj.Strings['en-US'] || fallback;
+  return fallback;
+}
+
+function paramByVar(varName) {
+  return jsonData.ConfigurationParameterDefinitions.find(p => p.VariableName === varName);
+}
+
+// ─────────────────────────────────────────────
+// BUILD FORM
+// ─────────────────────────────────────────────
+function buildForm() {
+  document.getElementById('emptyState').style.display = 'none';
+  const fc = document.getElementById('formContent');
+  fc.style.display = 'block';
+  fc.innerHTML = '';
+
+  // ── Template Meta ──
+  fc.appendChild(buildMetaCard());
+
+  // ── Group params by category ──
+  const categories = {};
+  jsonData.ConfigurationParameterDefinitions.forEach((param, idx) => {
+    if (ALWAYS_HIDDEN.includes(param.Id)) return;
+    if (FIXED_IDS.includes(param.Id)) return;
+
+    const cat = param.CategoryPath?.[0] ? str(param.CategoryPath[0], 'Sonstiges') : 'Sonstiges';
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push({ param, idx });
+  });
+
+  // Category display config
+  const catConfig = {
+    'LDAP - mandatory': { icon: '🔑', hint: 'Pflichtfelder für Active Directory', open: true },
+    'LDAP - notwendig': { icon: '🔑', hint: 'Pflichtfelder für Active Directory', open: true },
+    'General':          { icon: '📋', hint: 'Allgemeine Benutzerinfos' },
+    'Allgemeines':      { icon: '📋', hint: 'Allgemeine Benutzerinfos' },
+    'Password':         { icon: '🔒', hint: 'Kennwort & Konto-Optionen' },
+    'Passwort':         { icon: '🔒', hint: 'Kennwort & Konto-Optionen' },
+    'Address':          { icon: '🏠', hint: 'Adresse & Standort' },
+    'Adresse':          { icon: '🏠', hint: 'Adresse & Standort' },
+    'Attributes':       { icon: '🏷️', hint: 'Zusätzliche Attribute' },
+    'Attribute':        { icon: '🏷️', hint: 'Zusätzliche Attribute' },
+    'Extended attributes':  { icon: '⚙️', hint: 'Exchange-Erweiterungsattribute 1–15' },
+    'Erweiterte Attribute': { icon: '⚙️', hint: 'Exchange-Erweiterungsattribute 1–15' },
+    'Employee':         { icon: '👤', hint: 'Mitarbeiterdaten' },
+    'Mitarbeiter':      { icon: '👤', hint: 'Mitarbeiterdaten' },
+    'Manager':          { icon: '👔', hint: 'Vorgesetzter / Berichtsstruktur' },
+    'Vorgesetzter':     { icon: '👔', hint: 'Vorgesetzter / Berichtsstruktur' },
+    'Change account memberships':       { icon: '👥', hint: 'Gruppenmitgliedschaften' },
+    'Gruppenmitgliedschaften ändern':   { icon: '👥', hint: 'Gruppenmitgliedschaften' },
+    'Modification comment':     { icon: '💬', hint: 'Kommentar zur Änderung', open: true },
+    'Änderungskommentar':       { icon: '💬', hint: 'Kommentar zur Änderung', open: true },
+  };
+
+  Object.entries(categories).forEach(([cat, items]) => {
+    const cfg = catConfig[cat] || { icon: '📁', hint: '' };
+    const section = buildAccordion(cat, cfg, items);
+    fc.appendChild(section);
+  });
+
+  updatePreview();
+}
+
+// ─────────────────────────────────────────────
+// META CARD (ID, Name, Description)
+// ─────────────────────────────────────────────
+function buildMetaCard() {
+  const card = document.createElement('div');
+  card.className = 'meta-card';
+  card.innerHTML = `
+    <div class="meta-card-header">📝 Vorlage – Bezeichnung &amp; Beschreibung</div>
+    <div class="meta-card-body">
+      <div class="field">
+        <div class="field-label">Template-ID <span class="badge-required">Pflicht</span></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="padding:8px 10px;background:#f0f4f8;border:1px solid #cbd5e0;border-radius:6px;font-size:.8rem;color:#718096;white-space:nowrap">cts.manage.</span>
+          <input type="text" id="meta_id" placeholder="z.B. NewUserMarketing" style="flex:1">
+        </div>
+      </div>
+      <div class="field-grid two">
+        <div class="field">
+          <div class="field-label">Name (Deutsch)</div>
+          <input type="text" id="meta_name_de" placeholder="Anzeigename…">
+        </div>
+        <div class="field">
+          <div class="field-label">Name (Englisch)</div>
+          <input type="text" id="meta_name_en" placeholder="Display name…">
+        </div>
+      </div>
+      <div class="field-grid two">
+        <div class="field">
+          <div class="field-label">Beschreibung (Deutsch)</div>
+          <textarea id="meta_desc_de" placeholder="Beschreibung…"></textarea>
+        </div>
+        <div class="field">
+          <div class="field-label">Beschreibung (Englisch)</div>
+          <textarea id="meta_desc_en" placeholder="Description…"></textarea>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Populate
+  const idPart = (jsonData.Id || '').replace('cts.manage.', '');
+  card.querySelector('#meta_id').value = idPart;
+  card.querySelector('#meta_name_de').value = jsonData.Name?.Strings?.['de-DE'] || '';
+  card.querySelector('#meta_name_en').value = jsonData.Name?.Strings?.['en-US'] || '';
+  card.querySelector('#meta_desc_de').value = jsonData.Description?.Strings?.['de-DE'] || '';
+  card.querySelector('#meta_desc_en').value = jsonData.Description?.Strings?.['en-US'] || '';
+
+  // Listeners
+  function syncMeta() {
+    const idPart = card.querySelector('#meta_id').value || 'activeDirectoryStandardUser';
+    jsonData.Id = 'cts.manage.' + idPart;
+    if (!jsonData.Name) jsonData.Name = { Strings: {} };
+    const de = card.querySelector('#meta_name_de').value;
+    const en = card.querySelector('#meta_name_en').value;
+    jsonData.Name.Strings['de-DE'] = de;
+    jsonData.Name.Strings['en-US'] = en;
+    jsonData.Name.Strings['en-GB'] = en;
+    if (!jsonData.Description) jsonData.Description = { Strings: {} };
+    jsonData.Description.Strings['de-DE'] = card.querySelector('#meta_desc_de').value;
+    jsonData.Description.Strings['en-US'] = card.querySelector('#meta_desc_en').value;
+    jsonData.Description.Strings['en-GB'] = card.querySelector('#meta_desc_en').value;
+    updatePreview();
+  }
+  card.querySelectorAll('input, textarea').forEach(el => el.addEventListener('input', syncMeta));
+
+  return card;
+}
+
+// ─────────────────────────────────────────────
+// ACCORDION
+// ─────────────────────────────────────────────
+function buildAccordion(cat, cfg, items) {
+  const acc = document.createElement('div');
+  acc.className = 'accordion';
+
+  const hasRequired = items.some(({param}) =>
+    param.IsEnabledExpression !== 'false' &&
+    param.IsVisibleExpression !== 'false' &&
+    (param.MinStringLength > 0 || param.MinListLength > 0)
+  );
+
+  const count = items.length;
+  const header = document.createElement('div');
+  header.className = 'accordion-header' + (cfg.open ? ' open' : '');
+  header.innerHTML = `
+    <span class="acc-icon">${cfg.icon}</span>
+    <span class="acc-title">${cat}</span>
+    ${hasRequired ? `<span class="acc-badge warn">Pflichtfelder</span>` : ''}
+    <span class="acc-badge">${count} Felder</span>
+    <span class="acc-chevron">▶</span>
+  `;
+
+  const body = document.createElement('div');
+  body.className = 'accordion-body' + (cfg.open ? ' open' : '');
+
+  if (cfg.hint) {
+    const hint = document.createElement('p');
+    hint.style.cssText = 'font-size:.8rem;color:#718096;margin-bottom:14px;';
+    hint.textContent = cfg.hint;
+    body.appendChild(hint);
+  }
+
+  // Special layout for Password section: group flags together
+  if (cat === 'Password' || cat === 'Passwort') {
+    body.appendChild(buildPasswordSection(items));
+  } else if (cat === 'Extended attributes' || cat === 'Erweiterte Attribute') {
+    body.appendChild(buildExtendedAttrsSection(items));
+  } else {
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+    items.forEach(({param, idx}) => {
+      const field = buildField(param, idx);
+      if (field) grid.appendChild(field);
+    });
+    body.appendChild(grid);
+  }
+
+  header.addEventListener('click', () => {
+    const isOpen = header.classList.toggle('open');
+    if (isOpen) body.classList.add('open');
+    else body.classList.remove('open');
+  });
+
+  acc.appendChild(header);
+  acc.appendChild(body);
+  return acc;
+}
+
+// ─────────────────────────────────────────────
+// PASSWORD SECTION (special layout)
+// ─────────────────────────────────────────────
+function buildPasswordSection(items) {
+  const wrap = document.createElement('div');
+
+  // Separate password field from boolean flags
+  const pwParam = items.find(({param}) => param.DataType === 102);
+  const flagParams = items.filter(({param}) => param.DataType === 0);
+
+  if (pwParam) {
+    const pwField = buildField(pwParam.param, pwParam.idx);
+    if (pwField) wrap.appendChild(pwField);
+    wrap.appendChild(document.createElement('br'));
+  }
+
+  if (flagParams.length) {
+    const label = document.createElement('div');
+    label.className = 'section-label';
+    label.textContent = 'Konto-Optionen';
+    wrap.appendChild(label);
+
+    const grid = document.createElement('div');
+    grid.className = 'flags-grid';
+
+    flagParams.forEach(({param, idx}) => {
+      const flagEl = buildFlagItem(param, idx);
+      if (flagEl) grid.appendChild(flagEl);
+    });
+    wrap.appendChild(grid);
+  }
+
+  // memberships
+  const otherParams = items.filter(({param}) => param.DataType !== 102 && param.DataType !== 0);
+  if (otherParams.length) {
+    const g2 = document.createElement('div');
+    g2.className = 'field-grid';
+    g2.style.marginTop = '14px';
+    otherParams.forEach(({param, idx}) => {
+      const f = buildField(param, idx);
+      if (f) g2.appendChild(f);
+    });
+    wrap.appendChild(g2);
+  }
+
+  return wrap;
+}
+
+// Flag item (checkbox card)
+function buildFlagItem(param, idx) {
+  const label = str(param.Label, param.VariableName);
+  const item = document.createElement('label');
+  item.className = 'flag-item';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!param.DefaultValue;
+  cb.addEventListener('change', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = cb.checked;
+    updatePreview();
+  });
+  const span = document.createElement('span');
+  span.textContent = label;
+  item.appendChild(cb);
+  item.appendChild(span);
+  return item;
+}
+
+// ─────────────────────────────────────────────
+// EXTENDED ATTRIBUTES SECTION
+// ─────────────────────────────────────────────
+function buildExtendedAttrsSection(items) {
+  const wrap = document.createElement('div');
+
+  // Find the toggle
+  const toggleItem = items.find(({param}) => param.VariableName === 'editExtendedAttributes');
+  const attrItems  = items.filter(({param}) => param.VariableName !== 'editExtendedAttributes');
+
+  if (toggleItem) {
+    const toggleEl = document.createElement('div');
+    toggleEl.className = 'toggle-row';
+    toggleEl.style.marginBottom = '14px';
+    const lbl = document.createElement('label');
+    lbl.textContent = str(toggleItem.param.Label, 'Erweiterte Attribute bearbeiten');
+    lbl.style.fontWeight = '600';
+    const tog = document.createElement('label');
+    tog.className = 'toggle';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!toggleItem.param.DefaultValue;
+    const sl = document.createElement('span');
+    sl.className = 'slider';
+    tog.appendChild(cb); tog.appendChild(sl);
+    toggleEl.appendChild(lbl);
+    toggleEl.appendChild(tog);
+    wrap.appendChild(toggleEl);
+
+    const attrGrid = document.createElement('div');
+    attrGrid.className = 'field-grid';
+    attrItems.forEach(({param, idx}) => {
+      const f = buildField(param, idx);
+      if (f) attrGrid.appendChild(f);
+    });
+    attrGrid.style.opacity = cb.checked ? '1' : '.4';
+    attrGrid.style.pointerEvents = cb.checked ? '' : 'none';
+    wrap.appendChild(attrGrid);
+
+    cb.addEventListener('change', () => {
+      jsonData.ConfigurationParameterDefinitions[toggleItem.idx].DefaultValue = cb.checked;
+      attrGrid.style.opacity = cb.checked ? '1' : '.4';
+      attrGrid.style.pointerEvents = cb.checked ? '' : 'none';
+      updatePreview();
+    });
+  }
+
+  return wrap;
+}
+
+// ─────────────────────────────────────────────
+// SINGLE FIELD
+// ─────────────────────────────────────────────
+function buildField(param, idx) {
+  const dataType = param.DataType;
+  const label    = str(param.Label, param.VariableName);
+  const hint     = str(param.Description, '');
+  const isAuto   = !!param.AutoValueExpression;
+  const isEnabled = param.IsEnabledExpression !== 'false';
+  const isVisible = param.isVisibleExpression !== 'false' && param.IsVisibleExpression !== 'false';
+
+  // Skip always-invisible (computed only)
+  if (ALWAYS_HIDDEN.includes(param.Id)) return null;
+
+  // DataType 302 = OU Resource (read-only reference, not a text field)
+  if (dataType === 302 || dataType === 110) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `
+      <div class="field-label">${esc(label)} <span class="badge-fixed">Systemreferenz</span></div>
+      <div style="padding:8px 10px;background:#f7f7f7;border:1px solid #e2e8f0;border-radius:6px;font-size:.8rem;color:#999;font-style:italic">
+        Wird vom System gesetzt
+      </div>
+    `;
+    return div;
+  }
+
+  // DataType 11 = DateTime – rendered as toggle + inline note
+  if (dataType === 11) {
+    return null; // handled via SetAccountExpires toggle in parent
+  }
+
+  // DataType 0 = Boolean – in password section handled separately, skip here
+  if (dataType === 0 && (
+    param.CategoryPath?.[0] &&
+    (str(param.CategoryPath[0]).includes('Password') || str(param.CategoryPath[0]).includes('Passwort'))
+  )) {
+    return null; // handled in buildPasswordSection
+  }
+
+  // DataType 40 = Rich text / modification comment
+  if (dataType === 40) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `
+      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
+      <textarea placeholder="Begründung / Kommentar…" rows="3"></textarea>
+      ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+    `;
+    const ta = div.querySelector('textarea');
+    ta.value = param.DefaultValue || '';
+    ta.addEventListener('input', () => {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = ta.value;
+      updatePreview();
+    });
+    return div;
+  }
+
+  // DataType 0 = Boolean (toggle)
+  if (dataType === 0) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    const row = document.createElement('div');
+    row.className = 'toggle-row';
+    const lbl = document.createElement('label');
+    lbl.textContent = label;
+    const tog = document.createElement('label');
+    tog.className = 'toggle';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!param.DefaultValue;
+    const sl = document.createElement('span');
+    sl.className = 'slider';
+    tog.appendChild(cb); tog.appendChild(sl);
+    row.appendChild(lbl); row.appendChild(tog);
+    div.appendChild(row);
+    if (hint) {
+      const h = document.createElement('div');
+      h.className = 'field-hint';
+      h.textContent = hint;
+      div.appendChild(h);
+    }
+    cb.addEventListener('change', () => {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = cb.checked;
+      updatePreview();
+    });
+    return div;
+  }
+
+  // DataType 1 = Integer
+  if (dataType === 1) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `
+      <div class="field-label">${esc(label)}</div>
+      <input type="number" value="${param.DefaultValue ?? 0}">
+      ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+    `;
+    const inp = div.querySelector('input');
+    inp.addEventListener('input', () => {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = parseInt(inp.value) || 0;
+      updatePreview();
+    });
+    return div;
+  }
+
+  // DataType 102 = Password
+  if (dataType === 102) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `
+      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
+      <div class="pw-wrap">
+        <input type="password" value="${esc(param.DefaultValue || '')}">
+        <button class="pw-eye" onclick="togglePw(this)">👁</button>
+      </div>
+      ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+    `;
+    const inp = div.querySelector('input');
+    inp.addEventListener('input', () => {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+      updatePreview();
+    });
+    return div;
+  }
+
+  // DataType 13 = String list
+  if (dataType === 13) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    const vals = Array.isArray(param.DefaultValue) ? param.DefaultValue : [param.DefaultValue || ''];
+    div.innerHTML = `
+      <div class="field-label">${esc(label)}</div>
+      <textarea>${esc(vals.join('\n'))}</textarea>
+      ${hint ? `<div class="field-hint">${esc(hint)} (Zeilenweise)</div>` : '<div class="field-hint">Mehrere Einträge zeilenweise</div>'}
+    `;
+    const ta = div.querySelector('textarea');
+    ta.addEventListener('input', () => {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
+        ta.value.split('\n').filter(l => l !== '' || ta.value === '');
+      updatePreview();
+    });
+    return div;
+  }
+
+  // DataType 3 = String (default)
+  const isRequired = (param.MinStringLength || 0) > 0;
+  const div = document.createElement('div');
+  div.className = 'field';
+  div.innerHTML = `
+    <div class="field-label">
+      ${esc(label)}
+      ${isAuto ? '<span class="badge-auto">Auto</span>' : ''}
+      ${isRequired && !isAuto ? '<span class="badge-required">Pflicht</span>' : ''}
+    </div>
+    <input type="text" value="${esc(param.DefaultValue || '')}"
+      ${isAuto ? 'class="auto-field"' : ''}
+      placeholder="${isAuto ? 'Wird automatisch berechnet…' : ''}">
+    ${hint && hint !== label ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+  `;
+  const inp = div.querySelector('input');
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+    if (isAuto) inp.classList.toggle('auto-field', inp.value === '');
+    updatePreview();
+  });
+  return div;
+}
+
+// ─────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────
+function togglePw(btn) {
+  const inp = btn.previousElementSibling;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
