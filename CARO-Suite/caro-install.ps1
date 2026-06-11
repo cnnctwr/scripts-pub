@@ -5,142 +5,28 @@
 # --- Konfiguration -----------------------------------------------------------
 
 $DownloadUrl  = "https://cusatum.de/wp-content/uploads/1618/31/CARO-Suite-Setup.zip"
-$OriginalName = "CARO-Suite-Setup"
+$OriginalName = "CARO-Suite-Setup"   # Dateiname ohne .zip
 
+# Downloads-Verzeichnis des aktuellen Benutzers
 $DownloadsDir = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
+
+# Zeitstempel fuer Umbenennung und Zielordner
 $Timestamp    = Get-Date -Format "yyyy-MM-dd-HHmmss"
 $BaseName     = "$Timestamp-$OriginalName"
 $ZipPath      = Join-Path $DownloadsDir "$BaseName.zip"
 $ExtractDir   = Join-Path $DownloadsDir $BaseName
 
-# --- Vorab-Versionspruefung (nur letzter Teil des ZIPs) ----------------------
+# --- Bestaetigung ------------------------------------------------------------
 
-Write-Host "Pruefe verfuegbare Version..."
-
-$VerfuegbareVersion = $null
-try {
-    # Dateigroesse ermitteln
-    $Head     = Invoke-WebRequest -Uri $DownloadUrl -Method Head -UseBasicParsing
-    $FileSize = [long]$Head.Headers['Content-Length']
-    # Nur die letzten 1000 Byte laden
-    $ProgressPreference = 'SilentlyContinue'
-    $TailBytes = (Invoke-WebRequest -Uri $DownloadUrl `
-        -Headers @{ Range = "bytes=-1000" } `
-        -UseBasicParsing).Content
-
-    # ZIP-Central-Directory nach MSI-Dateinamen durchsuchen
-    for ($i = 0; $i -lt $TailBytes.Length - 46; $i++) {
-        if ($TailBytes[$i]   -eq 0x50 -and $TailBytes[$i+1] -eq 0x4B -and
-            $TailBytes[$i+2] -eq 0x01 -and $TailBytes[$i+3] -eq 0x02) {
-            $NameLen = [BitConverter]::ToUInt16($TailBytes, $i + 28)
-            if ($NameLen -gt 0 -and ($i + 46 + $NameLen) -le $TailBytes.Length) {
-                $EntryName = [System.Text.Encoding]::UTF8.GetString($TailBytes, $i + 46, $NameLen)
-                if ($EntryName -like "*.msi") {
-                    if ($EntryName -match '(\d{4}\.\d+\.\d+(\.\d+)?)') {
-                        $VerfuegbareVersion = $matches[1]
-                    }
-                    break
-                }
-            }
-        }
-    }
-} catch {
-    # Vorab-Pruefung fehlgeschlagen - wird spaeter beim vollstaendigen Download erneut versucht
-    Write-Host "Vorab-Pruefung fehlgeschlagen: $_"
-}
-
-# --- Installierte Version aus der Registry lesen -----------------------------
-
-$Installed = Get-ItemProperty `
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
-    -ErrorAction SilentlyContinue |
-    Where-Object { $_.DisplayName -like "*CARO*" } |
-    Select-Object -First 1
-
-Write-Host "Installierte Version (aus Registry): $Installed"
-Write-Host "Online gefundene Version: $VerfuegbareVersion"
-
-$InstalliertVersion = $null
-if ($Installed -and $Installed.DisplayName -match '(\d{4}\.\d+\.\d+(\.\d+)?)') {
-    $InstalliertVersion = $matches[1]
-}
-
-# --- Versionsvergleich und Benutzerentscheidung ------------------------------
-
-if ($VerfuegbareVersion -and $InstalliertVersion) {
-    $NeuV = [Version]$VerfuegbareVersion
-    $AltV = [Version]$InstalliertVersion
-
-    if ($NeuV -eq $AltV) {
-        # Fall 1: Gleiche Version
-        Write-Host ""
-        Write-Host "Version online:      $VerfuegbareVersion"
-        Write-Host "Version installiert: $InstalliertVersion"
-        Write-Host ""
-        Write-Host "Kein Update erforderlich. Die installierte Version ist aktuell."
-        Write-Host ""
-        Read-Host "Taste druecken zum Beenden"
-        exit 0
-    } elseif ($NeuV -lt $AltV) {
-        # Fall 3: Online-Version aelter als installierte Version
-        Write-Host ""
-        Write-Host "ACHTUNG: Die bereitgestellte Version traegt ein aelteres Datum."
-        Write-Host ""
-        Write-Host "Version online:      $VerfuegbareVersion"
-        Write-Host "Version installiert: $InstalliertVersion"
-        Write-Host ""
-        Write-Host "Moeglicher Grund: Rollback durch den Hersteller."
-        Write-Host "Die Installationsdatei, das Handbuch und die Lizenzbestimmungen"
-        Write-Host "liegen nach dem Download in folgendem Verzeichnis:"
-        Write-Host $ExtractDir
-        Write-Host ""
-        Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie den Lizenzbedingungen zu"
-        Write-Host "und installieren diese aeltere Version."
-        Write-Host ""
-        $Antwort = Read-Host "Wollen Sie dennoch fortfahren? (J/N)"
-        if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
-    } else {
-        # Fall 2: Neue Version verfuegbar
-        Write-Host ""
-        Write-Host "Neue Version der CARO Suite gefunden."
-        Write-Host ""
-        Write-Host "Version online:      $VerfuegbareVersion"
-        Write-Host "Version installiert: $InstalliertVersion"
-        Write-Host ""
-        Write-Host "Die Installationsdatei, das Handbuch und die Lizenzbestimmungen"
-        Write-Host "liegen nach dem Download in folgendem Verzeichnis:"
-        Write-Host $ExtractDir
-        Write-Host ""
-        Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie den Lizenzbedingungen zu"
-        Write-Host "und installieren die neueste Version der CARO Suite."
-        Write-Host ""
-        $Antwort = Read-Host "Wollen Sie fortfahren? (J/N)"
-        if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
-    }
-} else {
-    # Erstinstallation oder Versionsermittlung fehlgeschlagen
-    Write-Host ""
-    Write-Host "CARO Suite - Installation"
-    Write-Host ""
-    Write-Host "Die Installationsdatei, das Handbuch und die Lizenzbestimmungen"
-    Write-Host "liegen nach dem Download in folgendem Verzeichnis:"
-    Write-Host $ExtractDir
-    Write-Host ""
-    Write-Host "Wenn Sie mit 'Ja' antworten, stimmen Sie den Lizenzbedingungen zu"
-    Write-Host "und installieren die CARO Suite."
-    Write-Host ""
-    $Antwort = Read-Host "Wollen Sie fortfahren? (J/N)"
-    if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
-}
+$Antwort = Read-Host "Aktuelle Version der CARO Suite herunterladen und installieren? (J/N)"
+if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
 
 # --- Download ----------------------------------------------------------------
 
-Write-Host ""
 Write-Host "Lade herunter: $DownloadUrl"
 Write-Host "Ziel:          $ZipPath"
 
-$ProgressPreference = 'SilentlyContinue'
+$ProgressPreference = "SilentlyContinue"
 try {
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing
     Write-Host "Download abgeschlossen."
@@ -177,15 +63,43 @@ if (-not $MsiFile) {
 
 Write-Host "MSI gefunden: $($MsiFile.FullName)"
 
-# --- Blockierung aufheben ----------------------------------------------------
+# --- Blockierung aufheben (entspricht 'Zulassen' in den Eigenschaften) -------
 
 Unblock-File -Path $MsiFile.FullName
 Write-Host "Datei entsperrt."
 
+# --- Version der MSI auslesen ------------------------------------------------
+
+$Installer  = New-Object -ComObject WindowsInstaller.Installer
+$Db         = $Installer.GetType().InvokeMember("OpenDatabase", "InvokeMethod", $null, $Installer, @($MsiFile.FullName, 0))
+$View       = $Db.GetType().InvokeMember("OpenView", "InvokeMethod", $null, $Db, @("SELECT Value FROM Property WHERE Property='ProductVersion'"))
+$View.GetType().InvokeMember("Execute", "InvokeMethod", $null, $View, $null)
+$Record     = $View.GetType().InvokeMember("Fetch", "InvokeMethod", $null, $View, $null)
+$MsiVersion = $Record.GetType().InvokeMember("StringData", "GetProperty", $null, $Record, @(1))
+Write-Host "MSI-Version: $MsiVersion"
+
+# --- Installierte Version pruefen --------------------------------------------
+
+$Installed = Get-ItemProperty `
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+    -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -like "*CARO*" } |
+    Select-Object -First 1
+
 # --- Installation ------------------------------------------------------------
 
-Write-Host "Installiere CARO Suite..."
-$InstallArgs = "/i `"$($MsiFile.FullName)`" /passive /norestart"
+if ($Installed -and $Installed.DisplayVersion -eq $MsiVersion) {
+    # Gleiche Version bereits installiert - interaktiven Dialog anzeigen (Change/Repair/Remove)
+    Write-Host "Version $MsiVersion ist bereits installiert. Zeige Wartungsdialog..."
+    $InstallArgs = "/i `"$($MsiFile.FullName)`""
+} else {
+    # Neue Version oder Erstinstallation - automatisch mit Fortschrittsbalken
+    Write-Host "Installiere Version $MsiVersion..."
+    $InstallArgs = "/i `"$($MsiFile.FullName)`" /passive /norestart"
+}
+
+Write-Host "Starte Installation..."
 
 $Process = Start-Process -FilePath "msiexec.exe" -ArgumentList $InstallArgs -Wait -PassThru
 
@@ -200,5 +114,3 @@ if ($Process.ExitCode -eq 0) {
 
 Write-Host ""
 Write-Host "Installiertes Paket liegt in: $ExtractDir"
-Write-Host ""
-Read-Host "Taste druecken zum Beenden"
