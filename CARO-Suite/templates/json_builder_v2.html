@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CTS JSON Builder</title>
+<title>CARO JSON Builder</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -39,12 +39,9 @@
   }
   .btn-light  { background: rgba(255,255,255,.2); color: white; }
   .btn-light:hover { background: rgba(255,255,255,.35); }
-  .btn-white  { background: white; color: #00bcd4; }
-  .btn-white:hover { background: #e0f7fa; }
   .btn-save   { background: #00897b; color: white; }
   .btn-save:hover { background: #00695c; }
-
-  #fileInput { display: none; }
+  #fileInput  { display: none; }
 
   /* ── Layout ── */
   .layout {
@@ -69,7 +66,7 @@
   }
   #toast.show { opacity: 1; }
 
-  /* ── Template Meta Card ── */
+  /* ── Meta Card ── */
   .meta-card {
     background: white;
     border-radius: 10px;
@@ -85,13 +82,10 @@
     text-transform: uppercase;
     letter-spacing: .06em;
     color: #00838f;
-    display: flex;
-    align-items: center;
-    gap: 8px;
   }
   .meta-card-body { padding: 16px 18px; display: grid; gap: 12px; }
 
-  /* ── Accordion Section ── */
+  /* ── Accordion ── */
   .accordion {
     background: white;
     border-radius: 10px;
@@ -99,8 +93,10 @@
     margin-bottom: 10px;
     overflow: hidden;
   }
+  .accordion.section-disabled { opacity: .6; }
+
   .accordion-header {
-    padding: 14px 18px;
+    padding: 12px 16px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -111,72 +107,60 @@
   .accordion-header:hover { background: #f7fafa; }
   .accordion-header.open  { border-bottom: 1px solid #e2e8f0; }
 
-  .acc-icon { font-size: 1.1rem; width: 28px; text-align: center; }
-  .acc-title {
-    flex: 1;
-    font-weight: 600;
-    font-size: .95rem;
+  /* Section toggle checkbox */
+  .section-toggle {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    accent-color: #00bcd4;
+    cursor: pointer;
   }
+
+  .acc-icon  { font-size: 1rem; width: 24px; text-align: center; }
+  .acc-title { flex: 1; font-weight: 600; font-size: .95rem; }
+
   .acc-badge {
     background: #e0f7fa; color: #00838f;
     font-size: .72rem; font-weight: 700;
     padding: 2px 8px; border-radius: 12px;
   }
   .acc-badge.warn { background: #fff3e0; color: #e65100; }
-  .acc-chevron {
-    font-size: .75rem; color: #aaa;
-    transition: transform .2s;
-  }
+  .acc-badge.off  { background: #f5f5f5; color: #999; }
+
+  .acc-chevron { font-size: .75rem; color: #aaa; transition: transform .2s; }
   .accordion-header.open .acc-chevron { transform: rotate(90deg); }
 
-  .accordion-body {
-    display: none;
-    padding: 16px 18px;
-  }
-  .accordion-body.open { display: block; }
+  .accordion-body        { display: none; padding: 16px 18px; }
+  .accordion-body.open   { display: block; }
+  .accordion-body.dimmed { opacity: .4; pointer-events: none; }
 
   /* ── Field Grid ── */
-  .field-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 14px;
-  }
-  .field-grid.full { grid-template-columns: 1fr; }
-  .field-grid.two  { grid-template-columns: 1fr 1fr; }
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .field-grid.two { grid-template-columns: 1fr 1fr; }
 
   /* ── Field ── */
   .field { display: flex; flex-direction: column; gap: 4px; }
+  .field.field-disabled input,
+  .field.field-disabled textarea { background: #f5f5f5 !important; color: #aaa; }
+
+  .field-label-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .field-toggle {
+    width: 15px; height: 15px;
+    accent-color: #00bcd4;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
   .field-label {
-    font-size: .78rem;
-    font-weight: 600;
-    color: #4a5568;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    font-size: .78rem; font-weight: 600; color: #4a5568;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   }
-  .badge-auto {
-    background: #f0fff4; color: #276749;
-    font-size: .65rem; font-weight: 700;
-    padding: 1px 6px; border-radius: 10px;
-    border: 1px solid #c6f6d5;
-  }
-  .badge-fixed {
-    background: #f7f7f7; color: #999;
-    font-size: .65rem; font-weight: 700;
-    padding: 1px 6px; border-radius: 10px;
-    border: 1px solid #ddd;
-  }
-  .badge-required {
-    background: #fff5f5; color: #c53030;
-    font-size: .65rem;
-    padding: 1px 6px; border-radius: 10px;
-    border: 1px solid #fed7d7;
-  }
-  .field-hint {
-    font-size: .72rem;
-    color: #718096;
-    margin-top: 1px;
-  }
+  .badge-auto     { background: #f0fff4; color: #276749; font-size: .65rem; font-weight: 700; padding: 1px 6px; border-radius: 10px; border: 1px solid #c6f6d5; }
+  .badge-fixed    { background: #f7f7f7; color: #999;    font-size: .65rem; font-weight: 700; padding: 1px 6px; border-radius: 10px; border: 1px solid #ddd; }
+  .badge-required { background: #fff5f5; color: #c53030; font-size: .65rem; padding: 1px 6px; border-radius: 10px; border: 1px solid #fed7d7; }
+
+  .field-hint { font-size: .72rem; color: #718096; margin-top: 1px; }
+
   .field input[type="text"],
   .field input[type="password"],
   .field input[type="number"],
@@ -189,159 +173,95 @@
     transition: border .15s, box-shadow .15s;
     background: white;
   }
-  .field input:focus,
-  .field textarea:focus {
-    outline: none;
-    border-color: #00bcd4;
+  .field input:focus, .field textarea:focus {
+    outline: none; border-color: #00bcd4;
     box-shadow: 0 0 0 3px rgba(0,188,212,.15);
   }
-  .field input.auto-field {
-    background: #f8fff8;
-    border-color: #c6f6d5;
-    color: #276749;
-    font-style: italic;
-  }
-  .field input:disabled,
-  .field textarea:disabled {
-    background: #f7f7f7;
-    color: #999;
-    cursor: not-allowed;
-  }
+  .field input.auto-field { background: #f8fff8; border-color: #c6f6d5; color: #276749; font-style: italic; }
+  .field input:disabled, .field textarea:disabled { background: #f7f7f7; color: #999; cursor: not-allowed; }
   .field textarea { min-height: 70px; resize: vertical; }
 
-  /* Password with toggle */
+  /* Password */
   .pw-wrap { position: relative; }
   .pw-wrap input { padding-right: 36px; width: 100%; }
-  .pw-eye {
-    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-    cursor: pointer; color: #aaa; font-size: .9rem;
-    background: none; border: none; padding: 0;
-  }
+  .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: .9rem; background: none; border: none; padding: 0; }
   .pw-eye:hover { color: #555; }
 
-  /* Toggles */
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 0;
-  }
-  .toggle-row label {
-    font-size: .875rem;
-    color: #2d3748;
-    cursor: pointer;
-    flex: 1;
-  }
-  .toggle {
-    position: relative;
-    width: 36px; height: 20px;
-    flex-shrink: 0;
-  }
+  /* Toggle switch */
+  .toggle-row   { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .toggle-row label { font-size: .875rem; color: #2d3748; cursor: pointer; flex: 1; }
+  .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
   .toggle input { opacity: 0; width: 0; height: 0; }
-  .slider {
-    position: absolute; inset: 0;
-    background: #cbd5e0; border-radius: 20px;
-    cursor: pointer; transition: background .2s;
-  }
-  .slider:before {
-    content: '';
-    position: absolute;
-    width: 14px; height: 14px;
-    left: 3px; top: 3px;
-    background: white; border-radius: 50%;
-    transition: transform .2s;
-  }
+  .slider { position: absolute; inset: 0; background: #cbd5e0; border-radius: 20px; cursor: pointer; transition: background .2s; }
+  .slider:before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform .2s; }
   .toggle input:checked + .slider { background: #00bcd4; }
   .toggle input:checked + .slider:before { transform: translateX(16px); }
 
-  /* Checkbox group for flags */
-  .flags-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .flag-item {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid #e2e8f0; border-radius: 6px;
-    cursor: pointer;
-    transition: background .15s, border .15s;
-  }
+  /* Flags */
+  .flags-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .flag-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; transition: background .15s, border .15s; }
   .flag-item:hover { background: #f0f9ff; border-color: #bee3f8; }
   .flag-item input { cursor: pointer; accent-color: #00bcd4; }
   .flag-item span { font-size: .82rem; color: #2d3748; }
 
+  /* ── Group list ── */
+  .group-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .group-row  { display: flex; gap: 6px; align-items: center; }
+  .group-row input[type="text"] {
+    flex: 1; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px;
+    font-size: .875rem; font-family: inherit;
+  }
+  .group-row input:focus { outline: none; border-color: #00bcd4; box-shadow: 0 0 0 3px rgba(0,188,212,.15); }
+  .btn-remove {
+    background: #fff5f5; color: #c53030; border: 1px solid #fed7d7;
+    border-radius: 6px; padding: 7px 10px; cursor: pointer; font-size: .85rem;
+    flex-shrink: 0; transition: background .15s;
+  }
+  .btn-remove:hover { background: #fed7d7; }
+  .btn-add-group {
+    margin-top: 6px; padding: 7px 14px;
+    background: #e0f7fa; color: #00695c; border: 1px solid #b2dfdb;
+    border-radius: 6px; font-size: .82rem; font-weight: 600;
+    cursor: pointer; transition: background .15s; align-self: flex-start;
+  }
+  .btn-add-group:hover { background: #b2dfdb; }
+  .group-info {
+    font-size: .75rem; color: #718096; margin-top: 6px;
+    padding: 8px 10px; background: #f7fafc; border-radius: 6px;
+    border-left: 3px solid #00bcd4; line-height: 1.5;
+  }
+
+  /* ── Section label ── */
+  .section-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #a0aec0; margin: 14px 0 8px; }
+
   /* ── Preview Panel ── */
-  .preview-panel {
-    position: sticky;
-    top: 76px;
-    align-self: start;
-  }
-  .preview-card {
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.1);
-    overflow: hidden;
-  }
-  .preview-header {
-    background: #263238;
-    color: white;
-    padding: 12px 16px;
-    font-size: .8rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
+  .preview-panel { position: sticky; top: 76px; align-self: start; }
+  .preview-card  { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: hidden; }
+  .preview-header { background: #263238; color: white; padding: 12px 16px; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
   #jsonOutput {
     font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-    font-size: .72rem;
-    line-height: 1.5;
-    background: #1e272e;
-    color: #ecf0f1;
-    padding: 14px;
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
-    white-space: pre;
-    tab-size: 2;
+    font-size: .72rem; line-height: 1.5;
+    background: #1e272e; color: #ecf0f1;
+    padding: 14px; max-height: calc(100vh - 200px);
+    overflow-y: auto; white-space: pre; tab-size: 2;
   }
-
-  /* ── Empty state ── */
-  .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: #a0aec0;
-  }
-  .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
-  .empty-state h2 { font-size: 1.1rem; margin-bottom: 8px; color: #718096; }
-  .empty-state p { font-size: .875rem; }
-
-  /* ── Divider label ── */
-  .section-label {
-    font-size: .7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: #a0aec0;
-    margin: 14px 0 8px;
-  }
-
-  /* ── Disabled section overlay ── */
-  .acc-disabled .accordion-body { opacity: .5; pointer-events: none; }
-
-  /* ── Scrollbar ── */
   #jsonOutput::-webkit-scrollbar { width: 6px; }
   #jsonOutput::-webkit-scrollbar-track { background: #1e272e; }
   #jsonOutput::-webkit-scrollbar-thumb { background: #37474f; border-radius: 3px; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 60px 20px; color: #a0aec0; }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+  .empty-state h2 { font-size: 1.1rem; margin-bottom: 8px; color: #718096; }
+  .empty-state p { font-size: .875rem; }
 </style>
 </head>
 <body>
 
-<!-- TOPBAR -->
 <div class="topbar">
   <div>
-    <h1>🗂 CTS JSON Builder</h1>
-    <p>Active Directory – Benutzer Vorlage konfigurieren</p>
+    <h1>🗂 CUSATUM JSON Builder</h1>
+    <p>CARO-Suite – Vorlagen für die Benutzeranlage</p>
   </div>
   <div class="topbar-actions">
     <label for="fileInput" class="btn btn-light">📂 JSON laden</label>
@@ -353,18 +273,15 @@
 <div id="toast"></div>
 
 <div class="layout">
-  <!-- LEFT: FORM -->
   <div id="formArea">
     <div class="empty-state" id="emptyState">
       <div class="icon">📄</div>
       <h2>Noch keine Datei geladen</h2>
-      <p>Klicke oben auf <strong>JSON laden</strong> und wähle deine<br>
-         <code>.json</code>-Vorlage aus.</p>
+      <p>Klicke oben auf <strong>JSON laden</strong> und wähle deine<br><code>.json</code>-Vorlage aus.</p>
     </div>
     <div id="formContent" style="display:none"></div>
   </div>
 
-  <!-- RIGHT: JSON PREVIEW -->
   <div class="preview-panel">
     <div class="preview-card">
       <div class="preview-header">
@@ -381,6 +298,19 @@
 // STATE
 // ─────────────────────────────────────────────
 let jsonData = null;
+
+const ALWAYS_HIDDEN = [
+  'cts.mandatoryLdapParameter.AccountGivennameReplace',
+  'cts.mandatoryLdapParameter.AccountSurnameReplace'
+];
+const FIXED_IDS = [
+  'cts.createNewAccount.LdapOuResource',
+  'cts.modificationComment',
+  'cts.createNewAccount.ModificationComment'
+];
+const GROUP_MEMBERSHIP_ID = 'cts.changeAccountMemberships.addMembers';
+const GROUP_QUERY_TEMPLATE =
+  "@@services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'group'), queryInList('samAccountName', [GROUPS])), toTypedArray('System.Int32', [ 1 ])).Items@@";
 
 // ─────────────────────────────────────────────
 // FILE LOADING
@@ -430,7 +360,7 @@ function downloadJSON() {
 }
 
 // ─────────────────────────────────────────────
-// UPDATE JSON PREVIEW
+// PREVIEW
 // ─────────────────────────────────────────────
 function updatePreview() {
   if (!jsonData) return;
@@ -439,27 +369,51 @@ function updatePreview() {
 }
 
 // ─────────────────────────────────────────────
-// PARAM HELPERS
+// HELPERS
 // ─────────────────────────────────────────────
-const ALWAYS_HIDDEN = [
-  'cts.mandatoryLdapParameter.AccountGivennameReplace',
-  'cts.mandatoryLdapParameter.AccountSurnameReplace'
-];
-const FIXED_IDS = [
-  'cts.createNewAccount.LdapOuResource',
-  'cts.modificationComment',
-  'cts.createNewAccount.ModificationComment'
-];
-
-function str(obj, fallback='') {
+function str(obj, fallback = '') {
   if (!obj) return fallback;
   if (typeof obj === 'string') return obj;
   if (obj.Strings) return obj.Strings['de-DE'] || obj.Strings['en-US'] || fallback;
   return fallback;
 }
 
-function paramByVar(varName) {
-  return jsonData.ConfigurationParameterDefinitions.find(p => p.VariableName === varName);
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Is a param "required" (no toggle allowed)?
+function isRequired(param) {
+  const hasAutoValue = !!param.AutoValueExpression;
+  if (hasAutoValue) return false; // auto fields are not "required" in user-input sense
+  return (param.MinStringLength || 0) > 0 ||
+         (param.MinListLength   || 0) > 0 ||
+         param.DataType === 40; // modification comment
+}
+
+// Is a param currently visible/enabled in the JSON?
+function isParamActive(param) {
+  return param.IsEnabledExpression !== 'false' &&
+         param.isVisibleExpression !== 'false' &&
+         param.IsVisibleExpression !== 'false';
+}
+
+// Enable or disable a parameter in jsonData
+function setParamActive(idx, active) {
+  const param = jsonData.ConfigurationParameterDefinitions[idx];
+  if (active) {
+    // Restore to "true" only if it was previously forced off
+    if (param.IsEnabledExpression === 'false') param.IsEnabledExpression = 'true';
+    if (param.IsVisibleExpression === 'false') param.IsVisibleExpression = 'true';
+    if (param.isVisibleExpression === 'false') param.isVisibleExpression = 'true';
+  } else {
+    param.IsEnabledExpression = 'false';
+    param.IsVisibleExpression = 'false';
+  }
+  updatePreview();
 }
 
 // ─────────────────────────────────────────────
@@ -471,55 +425,53 @@ function buildForm() {
   fc.style.display = 'block';
   fc.innerHTML = '';
 
-  // ── Template Meta ──
   fc.appendChild(buildMetaCard());
 
-  // ── Group params by category ──
+  // Group params by category
   const categories = {};
   jsonData.ConfigurationParameterDefinitions.forEach((param, idx) => {
     if (ALWAYS_HIDDEN.includes(param.Id)) return;
     if (FIXED_IDS.includes(param.Id)) return;
-
     const cat = param.CategoryPath?.[0] ? str(param.CategoryPath[0], 'Sonstiges') : 'Sonstiges';
     if (!categories[cat]) categories[cat] = [];
     categories[cat].push({ param, idx });
   });
 
-  // Category display config
   const catConfig = {
-    'LDAP - mandatory': { icon: '🔑', hint: 'Pflichtfelder für Active Directory', open: true },
-    'LDAP - notwendig': { icon: '🔑', hint: 'Pflichtfelder für Active Directory', open: true },
-    'General':          { icon: '📋', hint: 'Allgemeine Benutzerinfos' },
-    'Allgemeines':      { icon: '📋', hint: 'Allgemeine Benutzerinfos' },
-    'Password':         { icon: '🔒', hint: 'Kennwort & Konto-Optionen' },
-    'Passwort':         { icon: '🔒', hint: 'Kennwort & Konto-Optionen' },
-    'Address':          { icon: '🏠', hint: 'Adresse & Standort' },
-    'Adresse':          { icon: '🏠', hint: 'Adresse & Standort' },
-    'Attributes':       { icon: '🏷️', hint: 'Zusätzliche Attribute' },
-    'Attribute':        { icon: '🏷️', hint: 'Zusätzliche Attribute' },
-    'Extended attributes':  { icon: '⚙️', hint: 'Exchange-Erweiterungsattribute 1–15' },
-    'Erweiterte Attribute': { icon: '⚙️', hint: 'Exchange-Erweiterungsattribute 1–15' },
-    'Employee':         { icon: '👤', hint: 'Mitarbeiterdaten' },
-    'Mitarbeiter':      { icon: '👤', hint: 'Mitarbeiterdaten' },
-    'Manager':          { icon: '👔', hint: 'Vorgesetzter / Berichtsstruktur' },
-    'Vorgesetzter':     { icon: '👔', hint: 'Vorgesetzter / Berichtsstruktur' },
-    'Change account memberships':       { icon: '👥', hint: 'Gruppenmitgliedschaften' },
-    'Gruppenmitgliedschaften ändern':   { icon: '👥', hint: 'Gruppenmitgliedschaften' },
-    'Modification comment':     { icon: '💬', hint: 'Kommentar zur Änderung', open: true },
-    'Änderungskommentar':       { icon: '💬', hint: 'Kommentar zur Änderung', open: true },
+    'LDAP - mandatory':               { icon: '🔑', open: true },
+    'LDAP - notwendig':               { icon: '🔑', open: true },
+    'General':                        { icon: '📋' },
+    'Allgemeines':                    { icon: '📋' },
+    'Password':                       { icon: '🔒' },
+    'Passwort':                       { icon: '🔒' },
+    'Address':                        { icon: '🏠' },
+    'Adresse':                        { icon: '🏠' },
+    'Attributes':                     { icon: '🏷️' },
+    'Attribute':                      { icon: '🏷️' },
+    'Extended attributes':            { icon: '⚙️' },
+    'Erweiterte Attribute':           { icon: '⚙️' },
+    'Employee':                       { icon: '👤' },
+    'Mitarbeiter':                    { icon: '👤' },
+    'Manager':                        { icon: '👔' },
+    'Vorgesetzter':                   { icon: '👔' },
+    'Add account memberships':        { icon: '👥', open: true },
+    'Gruppenmitgliedschaften hinzufügen': { icon: '👥', open: true },
+    'Change account memberships':     { icon: '👥', open: true },
+    'Gruppenmitgliedschaften ändern': { icon: '👥', open: true },
+    'Modification comment':           { icon: '💬', open: true },
+    'Änderungskommentar':             { icon: '💬', open: true },
   };
 
   Object.entries(categories).forEach(([cat, items]) => {
-    const cfg = catConfig[cat] || { icon: '📁', hint: '' };
-    const section = buildAccordion(cat, cfg, items);
-    fc.appendChild(section);
+    const cfg = catConfig[cat] || { icon: '📁' };
+    fc.appendChild(buildAccordion(cat, cfg, items));
   });
 
   updatePreview();
 }
 
 // ─────────────────────────────────────────────
-// META CARD (ID, Name, Description)
+// META CARD
 // ─────────────────────────────────────────────
 function buildMetaCard() {
   const card = document.createElement('div');
@@ -535,29 +487,16 @@ function buildMetaCard() {
         </div>
       </div>
       <div class="field-grid two">
-        <div class="field">
-          <div class="field-label">Name (Deutsch)</div>
-          <input type="text" id="meta_name_de" placeholder="Anzeigename…">
-        </div>
-        <div class="field">
-          <div class="field-label">Name (Englisch)</div>
-          <input type="text" id="meta_name_en" placeholder="Display name…">
-        </div>
+        <div class="field"><div class="field-label">Name (Deutsch)</div><input type="text" id="meta_name_de"></div>
+        <div class="field"><div class="field-label">Name (Englisch)</div><input type="text" id="meta_name_en"></div>
       </div>
       <div class="field-grid two">
-        <div class="field">
-          <div class="field-label">Beschreibung (Deutsch)</div>
-          <textarea id="meta_desc_de" placeholder="Beschreibung…"></textarea>
-        </div>
-        <div class="field">
-          <div class="field-label">Beschreibung (Englisch)</div>
-          <textarea id="meta_desc_en" placeholder="Description…"></textarea>
-        </div>
+        <div class="field"><div class="field-label">Beschreibung (Deutsch)</div><textarea id="meta_desc_de"></textarea></div>
+        <div class="field"><div class="field-label">Beschreibung (Englisch)</div><textarea id="meta_desc_en"></textarea></div>
       </div>
     </div>
   `;
 
-  // Populate
   const idPart = (jsonData.Id || '').replace('cts.manage.', '');
   card.querySelector('#meta_id').value = idPart;
   card.querySelector('#meta_name_de').value = jsonData.Name?.Strings?.['de-DE'] || '';
@@ -565,7 +504,6 @@ function buildMetaCard() {
   card.querySelector('#meta_desc_de').value = jsonData.Description?.Strings?.['de-DE'] || '';
   card.querySelector('#meta_desc_en').value = jsonData.Description?.Strings?.['en-US'] || '';
 
-  // Listeners
   function syncMeta() {
     const idPart = card.querySelector('#meta_id').value || 'activeDirectoryStandardUser';
     jsonData.Id = 'cts.manage.' + idPart;
@@ -582,7 +520,6 @@ function buildMetaCard() {
     updatePreview();
   }
   card.querySelectorAll('input, textarea').forEach(el => el.addEventListener('input', syncMeta));
-
   return card;
 }
 
@@ -590,37 +527,40 @@ function buildMetaCard() {
 // ACCORDION
 // ─────────────────────────────────────────────
 function buildAccordion(cat, cfg, items) {
+  // Determine if section is currently active (all params active → section active)
+  const sectionActive = items.some(({param}) => isParamActive(param));
+
   const acc = document.createElement('div');
   acc.className = 'accordion';
 
-  const hasRequired = items.some(({param}) =>
-    param.IsEnabledExpression !== 'false' &&
-    param.IsVisibleExpression !== 'false' &&
-    (param.MinStringLength > 0 || param.MinListLength > 0)
-  );
-
-  const count = items.length;
+  const hasRequired = items.some(({param}) => isRequired(param));
   const header = document.createElement('div');
   header.className = 'accordion-header' + (cfg.open ? ' open' : '');
-  header.innerHTML = `
+
+  // Section checkbox
+  const sectionCb = document.createElement('input');
+  sectionCb.type = 'checkbox';
+  sectionCb.className = 'section-toggle';
+  sectionCb.checked = sectionActive;
+  sectionCb.title = 'Gesamte Sektion ein-/ausblenden';
+
+  const badge = document.createElement('span');
+  badge.className = 'acc-badge' + (sectionActive ? '' : ' off');
+  badge.textContent = sectionActive ? items.length + ' Felder' : 'deaktiviert';
+
+  header.appendChild(sectionCb);
+  header.insertAdjacentHTML('beforeend', `
     <span class="acc-icon">${cfg.icon}</span>
-    <span class="acc-title">${cat}</span>
-    ${hasRequired ? `<span class="acc-badge warn">Pflichtfelder</span>` : ''}
-    <span class="acc-badge">${count} Felder</span>
-    <span class="acc-chevron">▶</span>
-  `;
+    <span class="acc-title">${esc(cat)}</span>
+    ${hasRequired ? '<span class="acc-badge warn">Pflichtfelder</span>' : ''}
+  `);
+  header.appendChild(badge);
+  header.insertAdjacentHTML('beforeend', '<span class="acc-chevron">▶</span>');
 
   const body = document.createElement('div');
-  body.className = 'accordion-body' + (cfg.open ? ' open' : '');
+  body.className = 'accordion-body' + (cfg.open ? ' open' : '') + (!sectionActive ? ' dimmed' : '');
 
-  if (cfg.hint) {
-    const hint = document.createElement('p');
-    hint.style.cssText = 'font-size:.8rem;color:#718096;margin-bottom:14px;';
-    hint.textContent = cfg.hint;
-    body.appendChild(hint);
-  }
-
-  // Special layout for Password section: group flags together
+  // Build body content
   if (cat === 'Password' || cat === 'Passwort') {
     body.appendChild(buildPasswordSection(items));
   } else if (cat === 'Extended attributes' || cat === 'Erweiterte Attribute') {
@@ -629,16 +569,40 @@ function buildAccordion(cat, cfg, items) {
     const grid = document.createElement('div');
     grid.className = 'field-grid';
     items.forEach(({param, idx}) => {
-      const field = buildField(param, idx);
-      if (field) grid.appendChild(field);
+      const f = buildField(param, idx);
+      if (f) grid.appendChild(f);
     });
     body.appendChild(grid);
   }
 
-  header.addEventListener('click', () => {
-    const isOpen = header.classList.toggle('open');
-    if (isOpen) body.classList.add('open');
-    else body.classList.remove('open');
+  // Section checkbox handler
+  sectionCb.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't toggle accordion open/close
+  });
+  sectionCb.addEventListener('change', () => {
+    const active = sectionCb.checked;
+    badge.textContent = active ? items.length + ' Felder' : 'deaktiviert';
+    badge.className = 'acc-badge' + (active ? '' : ' off');
+    body.classList.toggle('dimmed', !active);
+    acc.classList.toggle('section-disabled', !active);
+
+    items.forEach(({param, idx}) => {
+      if (FIXED_IDS.includes(param.Id)) return;
+      if (ALWAYS_HIDDEN.includes(param.Id)) return;
+      // Only touch params that aren't individually required-always
+      setParamActive(idx, active);
+    });
+
+    // Sync individual field checkboxes
+    body.querySelectorAll('.field-toggle').forEach(cb => { cb.checked = active; });
+    body.querySelectorAll('.field').forEach(f => f.classList.toggle('field-disabled', !active));
+  });
+
+  // Accordion open/close (clicking header but not checkbox)
+  header.addEventListener('click', (e) => {
+    if (e.target === sectionCb) return;
+    header.classList.toggle('open');
+    body.classList.toggle('open');
   });
 
   acc.appendChild(header);
@@ -647,44 +611,470 @@ function buildAccordion(cat, cfg, items) {
 }
 
 // ─────────────────────────────────────────────
+// FIELD (generic)
+// ─────────────────────────────────────────────
+function buildField(param, idx) {
+  const dataType = param.DataType;
+  const label    = str(param.Label, param.VariableName);
+  const hint     = str(param.Description, '');
+  const isAuto   = !!param.AutoValueExpression;
+  const req      = isRequired(param);
+  const active   = isParamActive(param);
+
+  if (ALWAYS_HIDDEN.includes(param.Id)) return null;
+
+  // DataType 302 / 110 = system references
+  if (dataType === 302 || dataType === 110) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `
+      <div class="field-label-row">
+        <div class="field-label">${esc(label)} <span class="badge-fixed">Systemreferenz</span></div>
+      </div>
+      <div style="padding:8px 10px;background:#f7f7f7;border:1px solid #e2e8f0;border-radius:6px;font-size:.8rem;color:#999;font-style:italic">
+        Wird vom System gesetzt
+      </div>
+    `;
+    return div;
+  }
+
+  // DataType 311 = group membership (special)
+  if (dataType === 311) return buildGroupMembershipField(param, idx);
+
+  // DataType 11 = DateTime (handled via SetAccountExpires toggle)
+  if (dataType === 11) return null;
+
+  // DataType 0 = Boolean in Password section → handled separately
+  if (dataType === 0 && isInPasswordCategory(param)) return null;
+
+  // DataType 40 = modification comment
+  if (dataType === 40) {
+    return buildTextareaField(param, idx, label, hint, true /* req */);
+  }
+
+  // DataType 0 = Boolean toggle
+  if (dataType === 0) {
+    return buildBooleanField(param, idx, label, hint, req, active);
+  }
+
+  // DataType 1 = Integer
+  if (dataType === 1) {
+    return buildIntegerField(param, idx, label, hint, req, active);
+  }
+
+  // DataType 102 = Password
+  if (dataType === 102) {
+    return buildPasswordField(param, idx, label, hint);
+  }
+
+  // DataType 13 = String list
+  if (dataType === 13) {
+    return buildStringListField(param, idx, label, hint, req, active);
+  }
+
+  // DataType 3 = String (default)
+  return buildStringField(param, idx, label, hint, isAuto, req, active);
+}
+
+function isInPasswordCategory(param) {
+  const cat = param.CategoryPath?.[0] ? str(param.CategoryPath[0]) : '';
+  return cat.includes('Password') || cat.includes('Passwort');
+}
+
+// ── wrap a field with optional toggle checkbox ──
+function wrapWithToggle(param, idx, active, req, innerEl) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.title = 'Feld ein-/ausschalten';
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+
+  wrap.appendChild(labelRow);
+  wrap.appendChild(innerEl);
+  return { wrap, labelRow };
+}
+
+function buildStringField(param, idx, label, hint, isAuto, req, active) {
+  const inner = document.createElement('div');
+  inner.style.display = 'contents';
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.innerHTML = `${esc(label)}
+    ${isAuto ? '<span class="badge-auto">Auto</span>' : ''}
+    ${req && !isAuto ? '<span class="badge-required">Pflicht</span>' : ''}`;
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = param.DefaultValue || '';
+  if (isAuto) inp.classList.add('auto-field');
+  if (isAuto) inp.placeholder = 'Wird automatisch berechnet…';
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+    if (isAuto) inp.classList.toggle('auto-field', inp.value === '');
+    updatePreview();
+  });
+
+  const { wrap, labelRow } = wrapWithToggle(param, idx, active, req, document.createElement('span'));
+  labelRow.appendChild(labelEl);
+  wrap.appendChild(inp);
+  if (hint && hint !== label) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function buildTextareaField(param, idx, label, hint, req) {
+  const div = document.createElement('div');
+  div.className = 'field';
+  div.innerHTML = `
+    <div class="field-label-row">
+      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
+    </div>
+    <textarea placeholder="Begründung / Kommentar…" rows="3"></textarea>
+    ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+  `;
+  const ta = div.querySelector('textarea');
+  ta.value = param.DefaultValue || '';
+  ta.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = ta.value;
+    updatePreview();
+  });
+  return div;
+}
+
+function buildBooleanField(param, idx, label, hint, req, active) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const row = document.createElement('div');
+  row.className = 'toggle-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.title = 'Feld ein-/ausschalten';
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    row.appendChild(cb);
+  }
+
+  const lbl = document.createElement('label');
+  lbl.textContent = label;
+
+  const tog = document.createElement('label');
+  tog.className = 'toggle';
+  const togCb = document.createElement('input');
+  togCb.type = 'checkbox';
+  togCb.checked = !!param.DefaultValue;
+  const sl = document.createElement('span');
+  sl.className = 'slider';
+  tog.appendChild(togCb); tog.appendChild(sl);
+  togCb.addEventListener('change', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = togCb.checked;
+    updatePreview();
+  });
+
+  row.appendChild(lbl); row.appendChild(tog);
+  wrap.appendChild(row);
+  if (hint) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function buildIntegerField(param, idx, label, hint, req, active) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = label;
+  labelRow.appendChild(labelEl);
+
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.value = param.DefaultValue ?? 0;
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = parseInt(inp.value) || 0;
+    updatePreview();
+  });
+
+  wrap.appendChild(labelRow);
+  wrap.appendChild(inp);
+  if (hint) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function buildPasswordField(param, idx, label, hint) {
+  const div = document.createElement('div');
+  div.className = 'field';
+  div.innerHTML = `
+    <div class="field-label-row">
+      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
+    </div>
+    <div class="pw-wrap">
+      <input type="password" value="${esc(param.DefaultValue || '')}">
+      <button class="pw-eye" type="button" onclick="togglePw(this)">👁</button>
+    </div>
+    ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+  `;
+  const inp = div.querySelector('input');
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+    updatePreview();
+  });
+  return div;
+}
+
+function buildStringListField(param, idx, label, hint, req, active) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = label;
+  labelRow.appendChild(labelEl);
+
+  const vals = Array.isArray(param.DefaultValue) ? param.DefaultValue : [param.DefaultValue || ''];
+  const ta = document.createElement('textarea');
+  ta.value = vals.join('\n');
+  ta.placeholder = 'Mehrere Einträge zeilenweise';
+  ta.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
+      ta.value.split('\n');
+    updatePreview();
+  });
+
+  wrap.appendChild(labelRow);
+  wrap.appendChild(ta);
+  if (hint) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint + ' (Zeilenweise)';
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+// ─────────────────────────────────────────────
+// GROUP MEMBERSHIP FIELD (DataType 311)
+// ─────────────────────────────────────────────
+function buildGroupMembershipField(param, idx) {
+  // Extract current group names from DefaultValue or __DefaultValue
+  let initialGroups = [];
+  const dv = param.DefaultValue;
+  if (typeof dv === 'string' && dv.includes('queryInList')) {
+    initialGroups = extractGroupsFromQuery(dv);
+  } else {
+    // Check __DefaultValue for example groups
+    const dvTemplate = param['__DefaultValue'];
+    if (dvTemplate && typeof dvTemplate === 'string') {
+      initialGroups = extractGroupsFromQuery(dvTemplate);
+    }
+  }
+
+  const active = isParamActive(param);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+  wrap.style.gridColumn = '1 / -1'; // full width
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'field-toggle';
+  cb.checked = active;
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => {
+    wrap.classList.toggle('field-disabled', !cb.checked);
+    setParamActive(idx, cb.checked);
+  });
+  labelRow.appendChild(cb);
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = str(param.Label, 'Gruppenmitgliedschaften');
+  labelRow.appendChild(labelEl);
+  wrap.appendChild(labelRow);
+
+  const info = document.createElement('div');
+  info.className = 'group-info';
+  info.textContent = 'Trage die sAMAccountNames der Gruppen ein, in die der neue Benutzer aufgenommen werden soll. Leer lassen = keine Gruppen zuweisen.';
+  wrap.appendChild(info);
+
+  const listEl = document.createElement('div');
+  listEl.className = 'group-list';
+  wrap.appendChild(listEl);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn-add-group';
+  addBtn.textContent = '+ Gruppe hinzufügen';
+  wrap.appendChild(addBtn);
+
+  function syncGroups() {
+    const names = Array.from(listEl.querySelectorAll('input[type="text"]'))
+      .map(i => i.value.trim())
+      .filter(v => v !== '');
+    if (names.length === 0) {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = [];
+    } else {
+      const quoted = names.map(n => `'${n}'`).join(', ');
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
+        GROUP_QUERY_TEMPLATE.replace('GROUPS', quoted);
+    }
+    updatePreview();
+  }
+
+  function addGroupRow(value = '') {
+    const row = document.createElement('div');
+    row.className = 'group-row';
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = value;
+    inp.placeholder = 'sAMAccountName der Gruppe…';
+    inp.addEventListener('input', syncGroups);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Gruppe entfernen';
+    removeBtn.addEventListener('click', () => {
+      row.remove();
+      syncGroups();
+    });
+
+    row.appendChild(inp);
+    row.appendChild(removeBtn);
+    listEl.appendChild(row);
+    inp.focus();
+  }
+
+  addBtn.addEventListener('click', () => addGroupRow());
+
+  // Populate with initial groups (from template as examples)
+  initialGroups.forEach(g => addGroupRow(g));
+  // If none, add one empty row
+  if (initialGroups.length === 0) addGroupRow();
+
+  syncGroups(); // sync initial state
+
+  return wrap;
+}
+
+function extractGroupsFromQuery(queryStr) {
+  // Extract array content from queryInList('samAccountName', ['A', 'B', ...])
+  const match = queryStr.match(/queryInList\('samAccountName',\s*\[([^\]]*)\]/);
+  if (!match) return [];
+  return match[1]
+    .split(',')
+    .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+// ─────────────────────────────────────────────
 // PASSWORD SECTION (special layout)
 // ─────────────────────────────────────────────
 function buildPasswordSection(items) {
   const wrap = document.createElement('div');
-
-  // Separate password field from boolean flags
-  const pwParam = items.find(({param}) => param.DataType === 102);
+  const pwParam   = items.find(({param}) => param.DataType === 102);
   const flagParams = items.filter(({param}) => param.DataType === 0);
+  const others    = items.filter(({param}) => param.DataType !== 102 && param.DataType !== 0);
 
   if (pwParam) {
-    const pwField = buildField(pwParam.param, pwParam.idx);
-    if (pwField) wrap.appendChild(pwField);
-    wrap.appendChild(document.createElement('br'));
+    wrap.appendChild(buildPasswordField(pwParam.param, pwParam.idx,
+      str(pwParam.param.Label, 'Kennwort'),
+      str(pwParam.param.Description, '')));
+    const spacer = document.createElement('div');
+    spacer.style.marginTop = '14px';
+    wrap.appendChild(spacer);
   }
 
   if (flagParams.length) {
-    const label = document.createElement('div');
-    label.className = 'section-label';
-    label.textContent = 'Konto-Optionen';
-    wrap.appendChild(label);
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.textContent = 'Konto-Optionen';
+    wrap.appendChild(lbl);
 
     const grid = document.createElement('div');
     grid.className = 'flags-grid';
-
     flagParams.forEach(({param, idx}) => {
-      const flagEl = buildFlagItem(param, idx);
-      if (flagEl) grid.appendChild(flagEl);
+      const item = buildFlagItem(param, idx);
+      if (item) grid.appendChild(item);
     });
     wrap.appendChild(grid);
   }
 
-  // memberships
-  const otherParams = items.filter(({param}) => param.DataType !== 102 && param.DataType !== 0);
-  if (otherParams.length) {
+  if (others.length) {
     const g2 = document.createElement('div');
     g2.className = 'field-grid';
     g2.style.marginTop = '14px';
-    otherParams.forEach(({param, idx}) => {
+    others.forEach(({param, idx}) => {
       const f = buildField(param, idx);
       if (f) g2.appendChild(f);
     });
@@ -694,9 +1084,7 @@ function buildPasswordSection(items) {
   return wrap;
 }
 
-// Flag item (checkbox card)
 function buildFlagItem(param, idx) {
-  const label = str(param.Label, param.VariableName);
   const item = document.createElement('label');
   item.className = 'flag-item';
   const cb = document.createElement('input');
@@ -707,7 +1095,7 @@ function buildFlagItem(param, idx) {
     updatePreview();
   });
   const span = document.createElement('span');
-  span.textContent = label;
+  span.textContent = str(param.Label, param.VariableName);
   item.appendChild(cb);
   item.appendChild(span);
   return item;
@@ -718,15 +1106,13 @@ function buildFlagItem(param, idx) {
 // ─────────────────────────────────────────────
 function buildExtendedAttrsSection(items) {
   const wrap = document.createElement('div');
-
-  // Find the toggle
   const toggleItem = items.find(({param}) => param.VariableName === 'editExtendedAttributes');
   const attrItems  = items.filter(({param}) => param.VariableName !== 'editExtendedAttributes');
 
   if (toggleItem) {
-    const toggleEl = document.createElement('div');
-    toggleEl.className = 'toggle-row';
-    toggleEl.style.marginBottom = '14px';
+    const row = document.createElement('div');
+    row.className = 'toggle-row';
+    row.style.marginBottom = '14px';
     const lbl = document.createElement('label');
     lbl.textContent = str(toggleItem.param.Label, 'Erweiterte Attribute bearbeiten');
     lbl.style.fontWeight = '600';
@@ -738,198 +1124,27 @@ function buildExtendedAttrsSection(items) {
     const sl = document.createElement('span');
     sl.className = 'slider';
     tog.appendChild(cb); tog.appendChild(sl);
-    toggleEl.appendChild(lbl);
-    toggleEl.appendChild(tog);
-    wrap.appendChild(toggleEl);
+    row.appendChild(lbl); row.appendChild(tog);
+    wrap.appendChild(row);
 
-    const attrGrid = document.createElement('div');
-    attrGrid.className = 'field-grid';
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
     attrItems.forEach(({param, idx}) => {
       const f = buildField(param, idx);
-      if (f) attrGrid.appendChild(f);
+      if (f) grid.appendChild(f);
     });
-    attrGrid.style.opacity = cb.checked ? '1' : '.4';
-    attrGrid.style.pointerEvents = cb.checked ? '' : 'none';
-    wrap.appendChild(attrGrid);
+    grid.style.opacity = cb.checked ? '1' : '.4';
+    grid.style.pointerEvents = cb.checked ? '' : 'none';
+    wrap.appendChild(grid);
 
     cb.addEventListener('change', () => {
       jsonData.ConfigurationParameterDefinitions[toggleItem.idx].DefaultValue = cb.checked;
-      attrGrid.style.opacity = cb.checked ? '1' : '.4';
-      attrGrid.style.pointerEvents = cb.checked ? '' : 'none';
+      grid.style.opacity = cb.checked ? '1' : '.4';
+      grid.style.pointerEvents = cb.checked ? '' : 'none';
       updatePreview();
     });
   }
-
   return wrap;
-}
-
-// ─────────────────────────────────────────────
-// SINGLE FIELD
-// ─────────────────────────────────────────────
-function buildField(param, idx) {
-  const dataType = param.DataType;
-  const label    = str(param.Label, param.VariableName);
-  const hint     = str(param.Description, '');
-  const isAuto   = !!param.AutoValueExpression;
-  const isEnabled = param.IsEnabledExpression !== 'false';
-  const isVisible = param.isVisibleExpression !== 'false' && param.IsVisibleExpression !== 'false';
-
-  // Skip always-invisible (computed only)
-  if (ALWAYS_HIDDEN.includes(param.Id)) return null;
-
-  // DataType 302 = OU Resource (read-only reference, not a text field)
-  if (dataType === 302 || dataType === 110) {
-    const div = document.createElement('div');
-    div.className = 'field';
-    div.innerHTML = `
-      <div class="field-label">${esc(label)} <span class="badge-fixed">Systemreferenz</span></div>
-      <div style="padding:8px 10px;background:#f7f7f7;border:1px solid #e2e8f0;border-radius:6px;font-size:.8rem;color:#999;font-style:italic">
-        Wird vom System gesetzt
-      </div>
-    `;
-    return div;
-  }
-
-  // DataType 11 = DateTime – rendered as toggle + inline note
-  if (dataType === 11) {
-    return null; // handled via SetAccountExpires toggle in parent
-  }
-
-  // DataType 0 = Boolean – in password section handled separately, skip here
-  if (dataType === 0 && (
-    param.CategoryPath?.[0] &&
-    (str(param.CategoryPath[0]).includes('Password') || str(param.CategoryPath[0]).includes('Passwort'))
-  )) {
-    return null; // handled in buildPasswordSection
-  }
-
-  // DataType 40 = Rich text / modification comment
-  if (dataType === 40) {
-    const div = document.createElement('div');
-    div.className = 'field';
-    div.innerHTML = `
-      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
-      <textarea placeholder="Begründung / Kommentar…" rows="3"></textarea>
-      ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
-    `;
-    const ta = div.querySelector('textarea');
-    ta.value = param.DefaultValue || '';
-    ta.addEventListener('input', () => {
-      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = ta.value;
-      updatePreview();
-    });
-    return div;
-  }
-
-  // DataType 0 = Boolean (toggle)
-  if (dataType === 0) {
-    const div = document.createElement('div');
-    div.className = 'field';
-    const row = document.createElement('div');
-    row.className = 'toggle-row';
-    const lbl = document.createElement('label');
-    lbl.textContent = label;
-    const tog = document.createElement('label');
-    tog.className = 'toggle';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = !!param.DefaultValue;
-    const sl = document.createElement('span');
-    sl.className = 'slider';
-    tog.appendChild(cb); tog.appendChild(sl);
-    row.appendChild(lbl); row.appendChild(tog);
-    div.appendChild(row);
-    if (hint) {
-      const h = document.createElement('div');
-      h.className = 'field-hint';
-      h.textContent = hint;
-      div.appendChild(h);
-    }
-    cb.addEventListener('change', () => {
-      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = cb.checked;
-      updatePreview();
-    });
-    return div;
-  }
-
-  // DataType 1 = Integer
-  if (dataType === 1) {
-    const div = document.createElement('div');
-    div.className = 'field';
-    div.innerHTML = `
-      <div class="field-label">${esc(label)}</div>
-      <input type="number" value="${param.DefaultValue ?? 0}">
-      ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
-    `;
-    const inp = div.querySelector('input');
-    inp.addEventListener('input', () => {
-      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = parseInt(inp.value) || 0;
-      updatePreview();
-    });
-    return div;
-  }
-
-  // DataType 102 = Password
-  if (dataType === 102) {
-    const div = document.createElement('div');
-    div.className = 'field';
-    div.innerHTML = `
-      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
-      <div class="pw-wrap">
-        <input type="password" value="${esc(param.DefaultValue || '')}">
-        <button class="pw-eye" onclick="togglePw(this)">👁</button>
-      </div>
-      ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
-    `;
-    const inp = div.querySelector('input');
-    inp.addEventListener('input', () => {
-      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
-      updatePreview();
-    });
-    return div;
-  }
-
-  // DataType 13 = String list
-  if (dataType === 13) {
-    const div = document.createElement('div');
-    div.className = 'field';
-    const vals = Array.isArray(param.DefaultValue) ? param.DefaultValue : [param.DefaultValue || ''];
-    div.innerHTML = `
-      <div class="field-label">${esc(label)}</div>
-      <textarea>${esc(vals.join('\n'))}</textarea>
-      ${hint ? `<div class="field-hint">${esc(hint)} (Zeilenweise)</div>` : '<div class="field-hint">Mehrere Einträge zeilenweise</div>'}
-    `;
-    const ta = div.querySelector('textarea');
-    ta.addEventListener('input', () => {
-      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
-        ta.value.split('\n').filter(l => l !== '' || ta.value === '');
-      updatePreview();
-    });
-    return div;
-  }
-
-  // DataType 3 = String (default)
-  const isRequired = (param.MinStringLength || 0) > 0;
-  const div = document.createElement('div');
-  div.className = 'field';
-  div.innerHTML = `
-    <div class="field-label">
-      ${esc(label)}
-      ${isAuto ? '<span class="badge-auto">Auto</span>' : ''}
-      ${isRequired && !isAuto ? '<span class="badge-required">Pflicht</span>' : ''}
-    </div>
-    <input type="text" value="${esc(param.DefaultValue || '')}"
-      ${isAuto ? 'class="auto-field"' : ''}
-      placeholder="${isAuto ? 'Wird automatisch berechnet…' : ''}">
-    ${hint && hint !== label ? `<div class="field-hint">${esc(hint)}</div>` : ''}
-  `;
-  const inp = div.querySelector('input');
-  inp.addEventListener('input', () => {
-    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
-    if (isAuto) inp.classList.toggle('auto-field', inp.value === '');
-    updatePreview();
-  });
-  return div;
 }
 
 // ─────────────────────────────────────────────
@@ -939,13 +1154,6 @@ function togglePw(btn) {
   const inp = btn.previousElementSibling;
   inp.type = inp.type === 'password' ? 'text' : 'password';
   btn.textContent = inp.type === 'password' ? '👁' : '🙈';
-}
-
-function esc(s) {
-  if (s === null || s === undefined) return '';
-  return String(s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 </body>
