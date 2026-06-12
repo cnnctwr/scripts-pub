@@ -54,14 +54,13 @@ Jeder Produktordner enthält eigene, weiterführende Anleitungen (README.md) mit
 
 Für die in diesem Repository bereitgestellten Skripte und Anleitungen können wir **keinen offiziellen Support im Rahmen professioneller Dienstleistungen** anbieten. Dies ist als zusätzliche und freiwillige Leistung seitens Connectware zu verstehen.
 
-Für **offiziell erworbene Produkte** erhalten Sie wie gewohnt Support über [support@connectware.de](mailto:support@connectware.de)
+Für **offiziell erworbene Produkte** erhalten Sie wie gewohnt Support über [support@connectware.de](mailto:support@connectware.de).
 
 ---
 
 ## 🏢 Über uns
 
-Weitere Informationen zu Connectware Distributions GmbH, unseren Produkten und Dienstleistungen finden Sie auf unserer Webseite:
-🌐 [connectware.de](https://connectware.de)
+Weitere Informationen zu Connectware Distributions GmbH, unseren Produkten und Dienstleistungen finden Sie auf unserer Webseite [connectware.de](https://connectware.de).
 
 
 ---
