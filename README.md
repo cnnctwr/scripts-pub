@@ -16,12 +16,13 @@ Dieses Repository enthält Skripte und Erweiterungen unter anderem für folgende
   - Webseite: [cusatum.de](https://cusatum.de)
   - Produkt: CARO Suite für Berechtigungsmanagement
 
-- **Microsoft**
-  - Produkt: Microsoft Exchange Online
-
 - **SEPPmail Security**
   - Webseite: [seppmail.com](https://seppmail.com)
   - Produkte: SEPPmail Secure E-Mail Gateway, SEPPmail.Cloud
+
+- **Microsoft**
+  - Produkt: Microsoft Exchange Online
+  - Information: kein Vertriebs- oder Servicepartner. Die angebotenen Skripte sind hilfreich im Allgemeinen Umgang mit Exchange online (EXO) und im Zusammenhang mit unseren Produkten.
 
 ---
 
@@ -53,18 +54,16 @@ Jeder Produktordner enthält eigene, weiterführende Anleitungen (README.md) mit
 
 Für die in diesem Repository bereitgestellten Skripte und Anleitungen können wir **keinen offiziellen Support im Rahmen professioneller Dienstleistungen** anbieten. Dies ist als zusätzliche und freiwillige Leistung seitens Connectware zu verstehen.
 
-Für **offiziell erworbene Produkte** erhalten Sie wie gewohnt Support über:
-📧 [support@connectware.de](mailto:support@connectware.de)
-
----
-
-## 🤝 Beiträge
-
-Hinweise, Verbesserungsvorschläge und Fehlermeldungen sind willkommen und können gerne über Issues oder Pull Requests eingereicht werden.
+Für **offiziell erworbene Produkte** erhalten Sie wie gewohnt Support über [support@connectware.de](mailto:support@connectware.de)
 
 ---
 
 ## 🏢 Über uns
 
 Weitere Informationen zu Connectware Distributions GmbH, unseren Produkten und Dienstleistungen finden Sie auf unserer Webseite:
-🌐 [connectwerk.de](https://connectwerk.de)
+🌐 [connectware.de](https://connectware.de)
+
+
+---
+
+Hinweise, Verbesserungsvorschläge und Fehlermeldungen sind willkommen und können gerne über Issues oder Pull Requests eingereicht werden.
