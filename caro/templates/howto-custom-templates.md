@@ -1,7 +1,9 @@
 
 ## Kurzanleitung zum Erstellen von eigenen Templates für die Nutzeranlage
 
-- legen sie die HTML in ein beliebiges Verzeichnis auf dem CARO-Server 
+**Inklusive der Zuordnung zu bestehenden Gruppen**
+
+- legen sie die `json_builder_v2.html` in ein beliebiges Verzeichnis auf dem CARO-Server 
 - öffnen sie die HTML durch Doppleklick
 - klicken sie rechts oben auf **JSON laden**
 - das JSON für die Standard-Nutzeranalge liegt hier:
