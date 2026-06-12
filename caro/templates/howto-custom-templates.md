@@ -3,7 +3,7 @@
 
 **Inklusive der Zuordnung zu bestehenden Gruppen**
 
-- legen sie die `[json_builder_v2.html](https://github.com/cnnctwr/scripts-pub/blob/main/caro/templates/json_builder_v2.html)` in ein beliebiges Verzeichnis auf dem CARO-Server 
+- legen sie die [json_builder_v2.html](https://github.com/cnnctwr/scripts-pub/blob/main/caro/templates/json_builder_v2.html) in ein beliebiges Verzeichnis auf dem CARO-Server 
 - öffnen sie die HTML durch Doppleklick
 - klicken sie rechts oben auf **JSON laden**
 - das JSON für die Standard-Nutzeranalge liegt hier:
