@@ -19,7 +19,7 @@ Der Prozess von Herunterladen, Entpacken, Berechtigen, Ausführen und Klicken de
 
 ## Einmalige Einrichtung
 
-1. Skript herunterladen: [caro-install.ps1](caro/install/caro-install.ps1)
+1. Skript herunterladen: [caro-install.ps1](caro-install.ps1)
 2. Beim Herunterladen erscheint moeglicherweise eine Browser-Warnung wegen ausfuehrbarer Dateien -- bestaetigen und Datei behalten.
 3. Die Datei vor dem ersten Start an den Ort verschieben, an dem sie dauerhaft verbleiben soll -- zum Beispiel in einen festen Ordner auf dem Server. Der Speicherort sollte danach nicht mehr geaendert werden.
 4. Datei per **Rechtsklick** oeffnen und **"Mit PowerShell ausfuehren"** waehlen.
