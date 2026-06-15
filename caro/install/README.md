@@ -2,6 +2,7 @@
 
 Dieses Skript haelt die **CARO-Suite** (Berechtigungsmanagement) auf dem aktuellen Stand.
 Es laedt die neueste Version von der CUSATUM-Homepage, entpackt sie und installiert sie automatisch.
+[https://cusatum.de/wp-content/uploads/1618/31/CARO-Suite-Setup.zip](https://cusatum.de/wp-content/uploads/1618/31/CARO-Suite-Setup.zip)
 
 Es sit aber kein Auto-Installer der selbstständig läuft sondern muss vom Administrator gestartet werden.
 Der Prozess von Herunterladen, Entpacken, Berechtigen, Ausführen und Klicken der Bestätignen entfällt und die Installation läuft nach einmaliger Zustimmung komplett durch.
@@ -18,7 +19,7 @@ Der Prozess von Herunterladen, Entpacken, Berechtigen, Ausführen und Klicken de
 
 ## Einmalige Einrichtung
 
-1. Skript herunterladen: [caro-install.ps1](caro-suite/caro/caro-install.ps1)
+1. Skript herunterladen: [caro-install.ps1](caro/install/caro-install.ps1)
 2. Beim Herunterladen erscheint moeglicherweise eine Browser-Warnung wegen ausfuehrbarer Dateien -- bestaetigen und Datei behalten.
 3. Die Datei vor dem ersten Start an den Ort verschieben, an dem sie dauerhaft verbleiben soll -- zum Beispiel in einen festen Ordner auf dem Server. Der Speicherort sollte danach nicht mehr geaendert werden.
 4. Datei per **Rechtsklick** oeffnen und **"Mit PowerShell ausfuehren"** waehlen.
