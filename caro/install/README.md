@@ -1,4 +1,4 @@
-# CARO Auto-Updater
+# CARO-Suite - Updater und Installer 
 
 Dieses Skript haelt die **CARO-Suite** (Berechtigungsmanagement) auf dem aktuellen Stand.
 Es laedt die neueste Version von der CUSATUM-Homepage, entpackt sie und installiert sie automatisch.
