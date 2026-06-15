@@ -3,6 +3,9 @@
 Dieses Skript haelt die **CARO-Suite** (Berechtigungsmanagement) auf dem aktuellen Stand.
 Es laedt die neueste Version von der CUSATUM-Homepage, entpackt sie und installiert sie automatisch.
 
+Es sit aber kein Auto-Installer der selbstständig läuft sondern muss vom Administrator gestartet werden.
+Der Prozess von Herunterladen, Entpacken, Berechtigen, Ausführen und Klicken der Bestätignen entfällt und die Installation läuft nach einmaliger Zustimmung komplett durch.
+
 ---
 
 ## Voraussetzungen
