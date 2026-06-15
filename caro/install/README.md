@@ -21,10 +21,10 @@ Lediglich der Prozess von Herunterladen, Entpacken, Berechtigen, Ausführen und 
 
 ## Einmalige Einrichtung
 
-1. Skript herunterladen (oben rechts, Download-Symbol, RAW Datei herunterladen): [caro-install.ps1](caro-install.ps1)
-2. Beim Herunterladen erscheint moeglicherweise eine Browser-Warnung wegen ausfuehrbarer Dateien -- bestaetigen und Datei behalten.
-3. Die Datei vor dem ersten Start an den Ort verschieben, an dem sie dauerhaft verbleiben soll -- zum Beispiel in einen festen Ordner auf dem Server. Der Speicherort sollte danach nicht mehr geaendert werden.
-4. Datei per **Rechtsklick** oeffnen und **"Mit PowerShell ausfuehren"** waehlen.
+1. Skript herunterladen (oben rechts, Download-Symbol, RAW Datei herunterladen): [caro-install.ps1](caro-install.ps1) [DL Direkt](https://github.com/cnnctwr/scripts-pub/raw/main/caro/install/caro-install.ps1?raw=1)
+4. Beim Herunterladen erscheint moeglicherweise eine Browser-Warnung wegen ausfuehrbarer Dateien -- bestaetigen und Datei behalten.
+5. Die Datei vor dem ersten Start an den Ort verschieben, an dem sie dauerhaft verbleiben soll -- zum Beispiel in einen festen Ordner auf dem Server. Der Speicherort sollte danach nicht mehr geaendert werden.
+6. Datei per **Rechtsklick** oeffnen und **"Mit PowerShell ausfuehren"** waehlen.
 
 Beim ersten Start legt das Skript automatisch eine Verkuepfung namens **"CARO Auto-Updater"** auf dem Desktop an, die auf die Skript-Datei an ihrem aktuellen Speicherort zeigt. Ab dann genuegt ein Doppelklick auf diese Verkuepfung -- die Skript-Datei selbst sollte danach nicht mehr verschoben werden.
 
