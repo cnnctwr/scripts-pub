@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Connectware Distributions – Skripte & Anleitungen
 
 Willkommen im öffentlichen Repository der **Connectware Distributions GmbH** (kurz: Connectware).
@@ -66,3 +67,7 @@ Weitere Informationen zu Connectware Distributions GmbH, unseren Produkten und D
 ---
 
 Hinweise, Verbesserungsvorschläge und Fehlermeldungen sind willkommen und können gerne über Issues oder Pull Requests eingereicht werden.
+=======
+# scripts-priv
+scripts and text that are company confidential
+>>>>>>> private/main
