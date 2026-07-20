@@ -14,6 +14,10 @@
  - Raeumt temporaere Dateien in jedem Fall auf (Erfolg/Abbruch/Fehler)
 
  Ablage: manuell nach C:\Scripts kopieren.
+
+ Entfernen des angelegten Scheduler-Task (in einer Powershell): 
+ Unregister-ScheduledTask -TaskName "Notepad++ Update" -Confirm:$false
+
 ================================================================
 #>
 
