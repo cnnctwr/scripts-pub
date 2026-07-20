@@ -1,97 +1,281 @@
-# Notepad++ Auto-Update
 
-Dieses Skript ([Update-NotepadPlusPlus.ps1](Update-NotepadPlusPlus.ps1)) haelt eine bestehende
-**Notepad++**-Installation auf einem Windows Server automatisch aktuell. Es laedt den offiziellen
-silent-Installer von GitHub Releases herunter und installiert ihn -- gesteuert ueber eine
-selbst angelegte geplante Aufgabe.
+<#
+================================================================
+ Notepad++ Auto-Update
+================================================================
+ Haelt eine bestehende Notepad++-Installation auf einem Windows
+ Server aktuell (offizieller silent Installer von GitHub Releases).
 
----
+ - Kompatibel mit Windows PowerShell 5.1 und PowerShell 7+
+ - Legt bei Bedarf selbst eine geplante Aufgabe an
+   (woechentlich, Sonntag 03:00 Uhr)
+ - Bricht ab, wenn Notepad++ gerade laeuft
+ - Prueft die Version VOR dem Download (kein unnoetiger Download)
+ - Schreibt pro Lauf ein eigenes Log nach %ProgramData%\Notepad++
+ - Raeumt temporaere Dateien in jedem Fall auf (Erfolg/Abbruch/Fehler)
 
-## Voraussetzungen
+ Ablage: manuell nach C:\Scripts kopieren.
+================================================================
+#>
 
-- Windows Server mit **Windows PowerShell 5.1** oder **PowerShell 7+** (beides kompatibel)
-- Administratorrechte (`#Requires -RunAsAdministrator`)
-- Ausgehender Internetzugang zu `api.github.com` und `github.com` (Port 443) -- ohne
-  direkten GitHub-Zugriff funktioniert die Versionspruefung/der Download nicht
+#Requires -Version 5.1
+#Requires -RunAsAdministrator
 
----
+# --- Konfiguration ---------------------------------------------------------
 
-## Einmalige Einrichtung
+$TaskName     = "Notepad++ Update"
+$LogDir       = Join-Path $env:ProgramData "Notepad++"
+$GitHubApiUrl = "https://api.github.com/repos/notepad-plus-plus/notepad-plus-plus/releases/latest"
 
-1. Skript nach **`C:\Scripts\Update-NotepadPlusPlus.ps1`** kopieren.
-2. Einmal manuell in einer **erhoehten** PowerShell-Sitzung ausfuehren.
+$ScriptPath = $PSCommandPath
+if (-not $ScriptPath) { $ScriptPath = $MyInvocation.MyCommand.Path }
 
-> ⚠️ **Wichtig: Ablageort vor dem ersten Start final festlegen.**
-> Beim ersten Lauf legt das Skript die geplante Aufgabe an und schreibt dabei den **aktuellen
-> Speicherort der Datei fest in die Aufgabe hinein** (`-File "C:\Scripts\Update-NotepadPlusPlus.ps1"`).
-> Bei jedem weiteren Lauf wird nur noch geprueft, ob die Aufgabe *existiert* -- der hinterlegte
-> Pfad wird **nicht** aktualisiert. Wird das Skript danach verschoben oder umbenannt, laeuft der
-> naechste manuelle Aufruf zwar weiterhin problemlos (der Pfad wird dabei dynamisch neu ermittelt),
-> aber die **geplante Aufgabe zeigt weiterhin auf den alten Pfad** und schlaegt beim naechsten
-> automatischen Lauf (Sonntag 03:00 Uhr) mit "Datei nicht gefunden" fehl.
-> Falls ein Verschieben unumgaenglich ist: Aufgabe **"Notepad++ Update"** in der Aufgabenplanung
-> loeschen -- sie wird beim naechsten Lauf am neuen Ort automatisch mit dem korrekten Pfad neu angelegt.
+# --- Log-Setup ---------------------------------------------------------------
 
----
+if (-not (Test-Path -LiteralPath $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+}
+$LogFile = Join-Path $LogDir ((Get-Date -Format "yyyy-MM-dd-HH-mm") + "-Update.log")
 
-## Was das Skript bei jedem Lauf tut
+function Write-Log {
+    param(
+        [Parameter(Mandatory)] [string] $Message,
+        [ValidateSet("INFO", "WARN", "ERROR")] [string] $Level = "INFO"
+    )
+    $line = "{0} [{1}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
+    Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
+    switch ($Level) {
+        "ERROR" { Write-Host $line -ForegroundColor Red }
+        "WARN"  { Write-Host $line -ForegroundColor Yellow }
+        default { Write-Host $line }
+    }
+}
 
-1. **Versionspruefung** -- installierte Version (Registry/Dateisystem) mit der aktuellen Version
-   auf GitHub vergleichen.
-2. **Pruefung geplante Aufgabe** -- existiert die Aufgabe **"Notepad++ Update"** bereits?
-   Falls nicht: anlegen (siehe unten).
-3. Ist die installierte Version bereits aktuell → **kein Download**, Skript beendet sich hier.
-4. Nur falls ein Update noetig ist:
-   - Pruefen, ob Notepad++ **gerade laeuft** → falls ja: **Abbruch** (kein Download, keine Installation).
-   - **Download** des passenden Installers (Architektur wird automatisch erkannt: x64 / x86 / ARM64).
-   - **Integritaetspruefung** (Ersatz fuer "Entpacken", da der offizielle Installer eine einzelne
-     EXE ohne Archiv ist): Authenticode-Signatur des Installers wird verifiziert.
-   - Erneute Pruefung, ob Notepad++ inzwischen gestartet wurde.
-   - **Silent-Installation** (`/S`) in das automatisch ermittelte Installationsverzeichnis.
-   - Erfolg wird ueber die neu installierte Versionsnummer verifiziert.
-5. **Aufraeumen** -- temporaeres Download-Verzeichnis wird in jedem Fall geloescht (Erfolg,
-   Abbruch oder Fehler), es bleiben keine Ueberbleibsel zurueck.
+$ExitCode = 0
+$TempDir  = $null
 
----
+try {
+    Write-Log "=== Notepad++ Update-Skript gestartet (PowerShell $($PSVersionTable.PSVersion)) ==="
 
-## Geplante Aufgabe
+    # Aeltere Server-Defaults (v.a. .NET Framework / Windows PowerShell 5.1)
+    # verlangen TLS 1.2 explizit, sonst schlaegt der Zugriff auf GitHub fehl.
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
 
-| Eigenschaft | Wert |
-|---|---|
-| Name | `Notepad++ Update` |
-| Zeitplan | woechentlich, **Sonntag, 03:00 Uhr** |
-| Ausfuehrender Benutzer | `SYSTEM` |
-| Rechteebene | Höchste Rechte (Highest) |
+    # --- Schritt 1: Versionspruefung ----------------------------------------
+    Write-Log "Schritt 1/5: Versionspruefung - ermittle installierte Notepad++-Version..."
 
----
+    $uninstallPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Notepad++",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Notepad++"
+    )
 
-## Logging
+    $installedVersion = $null
+    $installDir       = $null
 
-- Verzeichnis: **`%ProgramData%\Notepad++`** -- wird angelegt, falls es noch nicht existiert.
-- Ein eigenes Log pro Lauf: `YYYY-MM-DD-hh-mm-Update.log`
-- Jeder Schritt (Versionspruefung, Aufgabenpruefung, Download, Integritaetspruefung, Installation)
-  sowie alle Fehler werden mit Zeitstempel protokolliert.
+    foreach ($p in $uninstallPaths) {
+        if (Test-Path -LiteralPath $p) {
+            $regEntry = Get-ItemProperty -LiteralPath $p -ErrorAction SilentlyContinue
+            if ($regEntry.DisplayVersion)  { $installedVersion = $regEntry.DisplayVersion }
+            if ($regEntry.InstallLocation) { $installDir = $regEntry.InstallLocation.TrimEnd('\') }
+            if ($installedVersion) { break }
+        }
+    }
 
----
+    if (-not $installDir) {
+        $candidates = @(
+            (Join-Path $env:ProgramFiles "Notepad++")
+        )
+        if (${env:ProgramFiles(x86)}) { $candidates += (Join-Path ${env:ProgramFiles(x86)} "Notepad++") }
 
-## Architektur-Erkennung
+        foreach ($candidate in $candidates) {
+            if (Test-Path -LiteralPath (Join-Path $candidate "notepad++.exe")) {
+                $installDir = $candidate
+                break
+            }
+        }
+    }
 
-Wird automatisch anhand von `PROCESSOR_ARCHITECTURE` und `[Environment]::Is64BitOperatingSystem`
-bestimmt -- lädt den passenden Installer (`x64`, `x86` oder `arm64`) ohne manuelle Konfiguration.
+    if ($installDir -and -not $installedVersion) {
+        $exePath = Join-Path $installDir "notepad++.exe"
+        if (Test-Path -LiteralPath $exePath) {
+            $installedVersion = (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion
+        }
+    }
 
----
+    if ($installDir) {
+        Write-Log "Bestehende Installation gefunden: Verzeichnis '$installDir', Version '$installedVersion'."
+    } else {
+        $installDir = Join-Path $env:ProgramFiles "Notepad++"
+        Write-Log "Keine bestehende Installation gefunden. Erstinstallation nach '$installDir' vorgesehen." -Level WARN
+    }
 
-## Bekannte Annahmen
+    Write-Log "Frage aktuelle Version bei der GitHub Releases API ab..."
+    try {
+        $release = Invoke-RestMethod -Uri $GitHubApiUrl -Headers @{ "User-Agent" = "NppUpdateScript" } -UseBasicParsing
+    } catch {
+        Write-Log "Abfrage der GitHub-API fehlgeschlagen: $($_.Exception.Message)" -Level ERROR
+        throw
+    }
+    $latestVersion = $release.tag_name.TrimStart('v')
+    Write-Log "Aktuelle Version laut GitHub: $latestVersion"
 
-- **Versionsquelle:** GitHub Releases API (`notepad-plus-plus/notepad-plus-plus`). Falls der
-  Server keinen direkten Zugriff auf GitHub hat, muss dies auf einen internen Mirror/Proxy
-  umgestellt werden.
+    # Windows-Dateiversionen sind immer 4-stellig (z.B. 8.9.7.0), GitHub-Tags
+    # sind 3-stellig (8.9.7) - daher fuer den Vergleich auf 3 Stellen kuerzen.
+    $installedVersionShort = if ($installedVersion) { ($installedVersion -split '\.')[0..2] -join '.' } else { $null }
+    $latestVersionShort    = ($latestVersion -split '\.')[0..2] -join '.'
 
----
+    $updateNeeded = -not ($installedVersionShort -and ($installedVersionShort -eq $latestVersionShort))
+    if ($updateNeeded) {
+        Write-Log "Update erforderlich: '$installedVersion' -> '$latestVersion'."
+    } else {
+        Write-Log "Installierte Version entspricht der aktuellen Version. Kein Update noetig."
+    }
 
-## Deinstallation / Entfernen
+    # --- Schritt 2: Pruefung geplante Aufgabe -------------------------------
+    Write-Log "Schritt 2/5: Pruefe geplante Aufgabe '$TaskName'..."
 
-1. Geplante Aufgabe **"Notepad++ Update"** in der Aufgabenplanung loeschen.
-2. Datei `Update-NotepadPlusPlus.ps1` aus `C:\Scripts` entfernen.
-3. Logs unter `%ProgramData%\Notepad++` bei Bedarf manuell loeschen (werden vom Skript nicht
-   automatisch bereinigt).
+    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $existingTask) {
+        Write-Log "Geplante Aufgabe nicht gefunden. Lege sie an (woechentlich, Sonntag 03:00 Uhr, Ausfuehrung als SYSTEM)..."
+        try {
+            $hostExe = (Get-Process -Id $PID).Path
+            if (-not $hostExe) { $hostExe = "powershell.exe" }
+            $argString = '-NoProfile -ExecutionPolicy Bypass -File "' + $ScriptPath + '"'
+
+            $action    = New-ScheduledTaskAction -Execute $hostExe -Argument $argString
+            $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "03:00"
+            $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+            $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable
+
+            Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
+                -Principal $principal -Settings $settings `
+                -Description "Haelt Notepad++ automatisch aktuell (silent)." -Force | Out-Null
+
+            Write-Log "Geplante Aufgabe erfolgreich angelegt (Aktion: `"$hostExe`" $argString)."
+        } catch {
+            Write-Log "Anlegen der geplanten Aufgabe fehlgeschlagen: $($_.Exception.Message)" -Level ERROR
+        }
+    } else {
+        Write-Log "Geplante Aufgabe existiert bereits."
+    }
+
+    if (-not $updateNeeded) {
+        Write-Log "=== Skript erfolgreich beendet (kein Update erforderlich) ==="
+        exit 0
+    }
+
+    # Vor dem Download pruefen, ob Notepad++ laeuft - spart bei laufendem
+    # Prozess einen unnoetigen Download und bricht sauber ab.
+    Write-Log "Pruefe ob Notepad++ aktuell ausgefuehrt wird..."
+    if (Get-Process -Name "notepad++" -ErrorAction SilentlyContinue) {
+        Write-Log "Notepad++ wird gerade ausgefuehrt. Installation wird abgebrochen." -Level WARN
+        Write-Log "=== Skript beendet (abgebrochen, Prozess aktiv) ==="
+        exit 1
+    }
+    Write-Log "Notepad++ laeuft nicht. Fahre fort."
+
+    # --- Schritt 3: Download --------------------------------------------------
+    Write-Log "Schritt 3/5: Download - ermittle passendes Installer-Paket..."
+
+    $arch = $env:PROCESSOR_ARCHITECTURE
+    if ($arch -eq "ARM64") {
+        $assetPattern = "*Installer.arm64.exe"
+    } elseif ([Environment]::Is64BitOperatingSystem) {
+        $assetPattern = "*Installer.x64.exe"
+    } else {
+        $assetPattern = "*Installer.exe"
+    }
+    Write-Log "Erkannte Architektur: $arch -> Asset-Muster '$assetPattern'"
+
+    $asset = $release.assets | Where-Object { $_.name -like $assetPattern } | Select-Object -First 1
+    if (-not $asset) {
+        Write-Log "Kein passendes Installer-Asset fuer Muster '$assetPattern' gefunden." -Level ERROR
+        throw "Kein Installer-Asset gefunden."
+    }
+    Write-Log "Installer-Asset gefunden: $($asset.name)"
+
+    $TempDir = Join-Path $env:TEMP ("NppUpdate_" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+    $installerPath = Join-Path $TempDir $asset.name
+
+    Write-Log "Lade Installer herunter nach '$installerPath'..."
+    $ProgressPreference = "SilentlyContinue"
+    try {
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $installerPath -UseBasicParsing
+        Write-Log "Download abgeschlossen ($((Get-Item -LiteralPath $installerPath).Length) Bytes)."
+    } catch {
+        Write-Log "Download fehlgeschlagen: $($_.Exception.Message)" -Level ERROR
+        throw
+    }
+
+    # --- Schritt 4: Entpacken --------------------------------------------------
+    # Der offizielle Installer ist eine einzelne EXE (kein Archiv). An Stelle
+    # eines Entpack-Schritts wird hier die Authenticode-Signatur geprueft,
+    # um die Integritaet des heruntergeladenen Installers sicherzustellen.
+    Write-Log "Schritt 4/5: Entpacken/Integritaetspruefung - pruefe Authenticode-Signatur..."
+    $sig = Get-AuthenticodeSignature -LiteralPath $installerPath
+    if ($sig.Status -ne "Valid") {
+        Write-Log "Signaturpruefung fehlgeschlagen: Status '$($sig.Status)'." -Level ERROR
+        throw "Ungueltige Signatur des heruntergeladenen Installers."
+    }
+    Write-Log "Signatur gueltig. Aussteller: $($sig.SignerCertificate.Subject)"
+
+    # Erneute Pruefung unmittelbar vor der Installation: Notepad++ koennte
+    # waehrend des Downloads gestartet worden sein.
+    if (Get-Process -Name "notepad++" -ErrorAction SilentlyContinue) {
+        Write-Log "Notepad++ wurde waehrend des Downloads gestartet. Installation wird abgebrochen." -Level WARN
+        exit 1
+    }
+
+    # --- Schritt 5: Installieren -----------------------------------------------
+    Write-Log "Schritt 5/5: Installieren - starte silent Installation nach '$installDir'..."
+
+    # ProcessStartInfo.Arguments (roher String) statt Start-Process -ArgumentList
+    # verwenden: nur so bleibt das NSIS-Flag /D=<Pfad> auf PS 5.1 UND PS7
+    # garantiert unquotiert (NSIS verbietet Anfuehrungszeichen bei /D=).
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName        = $installerPath
+    $psi.Arguments       = "/S /D=$installDir"
+    $psi.UseShellExecute = $false
+
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+
+    if ($proc.ExitCode -ne 0) {
+        Write-Log "Installation fehlgeschlagen (Exit-Code $($proc.ExitCode))." -Level ERROR
+        throw "Installer beendet mit Exit-Code $($proc.ExitCode)."
+    }
+    Write-Log "Installer erfolgreich beendet (Exit-Code 0)."
+
+    Start-Sleep -Seconds 2
+    $exePath = Join-Path $installDir "notepad++.exe"
+    if (Test-Path -LiteralPath $exePath) {
+        $newVersion = (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion
+        Write-Log "Installierte Version nach Update: $newVersion"
+        # Windows-Dateiversionen sind immer 4-stellig (z.B. 8.9.7.0), GitHub-Tags
+        # sind 3-stellig (8.9.7) - daher fuer den Vergleich auf 3 Stellen kuerzen.
+        $newVersionShort    = ($newVersion -split '\.')[0..2] -join '.'
+        $latestVersionShort = ($latestVersion -split '\.')[0..2] -join '.'
+        if ($newVersionShort -ne $latestVersionShort) {
+            Write-Log "Installierte Version ($newVersion) weicht von erwarteter Version ($latestVersion) ab." -Level WARN
+        }
+    } else {
+        Write-Log "notepad++.exe wurde nach der Installation nicht unter '$installDir' gefunden." -Level ERROR
+        $ExitCode = 2
+    }
+
+    Write-Log "=== Skript erfolgreich beendet ==="
+}
+catch {
+    Write-Log "Unerwarteter Fehler: $($_.Exception.Message)" -Level ERROR
+    Write-Log "=== Skript mit Fehler beendet ===" -Level ERROR
+    $ExitCode = 2
+}
+finally {
+    if ($TempDir -and (Test-Path -LiteralPath $TempDir)) {
+        Write-Log "Raeume temporaeres Verzeichnis '$TempDir' auf..."
+        Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+exit $ExitCode
