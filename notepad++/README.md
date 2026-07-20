@@ -86,7 +86,6 @@ bestimmt -- lädt den passenden Installer (`x64`, `x86` oder `arm64`) ohne manue
 - **Versionsquelle:** GitHub Releases API (`notepad-plus-plus/notepad-plus-plus`). Falls der
   Server keinen direkten Zugriff auf GitHub hat, muss dies auf einen internen Mirror/Proxy
   umgestellt werden.
-- **Log-Dateiname:** `...-Update.log` (als sinnvolle Interpretation von "udate" angenommen).
 
 ---
 
