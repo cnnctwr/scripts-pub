@@ -135,14 +135,15 @@ try {
 
     $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if (-not $existingTask) {
-        Write-Log "Geplante Aufgabe nicht gefunden. Lege sie an (woechentlich, Sonntag 03:00 Uhr, Ausfuehrung als SYSTEM)..."
+        Write-Log "Geplante Aufgabe nicht gefunden. Lege sie an (täglich 03:00 Uhr, Ausfuehrung als SYSTEM)..."
         try {
             $hostExe = (Get-Process -Id $PID).Path
             if (-not $hostExe) { $hostExe = "powershell.exe" }
             $argString = '-NoProfile -ExecutionPolicy Bypass -File "' + $ScriptPath + '"'
 
             $action    = New-ScheduledTaskAction -Execute $hostExe -Argument $argString
-            $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "03:00"
+            # $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "03:00"  # wöchentlich
+            $trigger   = New-ScheduledTaskTrigger -Daily -At "03:00"  # täglich
             $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
             $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable
 
