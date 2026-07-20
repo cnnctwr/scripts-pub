@@ -118,7 +118,12 @@ try {
     $latestVersion = $release.tag_name.TrimStart('v')
     Write-Log "Aktuelle Version laut GitHub: $latestVersion"
 
-    $updateNeeded = -not ($installedVersion -and ($installedVersion -eq $latestVersion))
+    # Windows-Dateiversionen sind immer 4-stellig (z.B. 8.9.7.0), GitHub-Tags
+    # sind 3-stellig (8.9.7) - daher fuer den Vergleich auf 3 Stellen kuerzen.
+    $installedVersionShort = if ($installedVersion) { ($installedVersion -split '\.')[0..2] -join '.' } else { $null }
+    $latestVersionShort    = ($latestVersion -split '\.')[0..2] -join '.'
+
+    $updateNeeded = -not ($installedVersionShort -and ($installedVersionShort -eq $latestVersionShort))
     if ($updateNeeded) {
         Write-Log "Update erforderlich: '$installedVersion' -> '$latestVersion'."
     } else {
@@ -246,7 +251,11 @@ try {
     if (Test-Path -LiteralPath $exePath) {
         $newVersion = (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion
         Write-Log "Installierte Version nach Update: $newVersion"
-        if ($newVersion -ne $latestVersion) {
+        # Windows-Dateiversionen sind immer 4-stellig (z.B. 8.9.7.0), GitHub-Tags
+        # sind 3-stellig (8.9.7) - daher fuer den Vergleich auf 3 Stellen kuerzen.
+        $newVersionShort    = ($newVersion -split '\.')[0..2] -join '.'
+        $latestVersionShort = ($latestVersion -split '\.')[0..2] -join '.'
+        if ($newVersionShort -ne $latestVersionShort) {
             Write-Log "Installierte Version ($newVersion) weicht von erwarteter Version ($latestVersion) ab." -Level WARN
         }
     } else {
