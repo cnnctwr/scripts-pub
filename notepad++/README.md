@@ -19,8 +19,10 @@ selbst angelegte geplante Aufgabe.
 
 ## Einmalige Einrichtung
 
-1. Skript nach **`C:\Scripts\Update-NotepadPlusPlus.ps1`** kopieren.
-2. Einmal manuell in einer **erhoehten** PowerShell-Sitzung ausfuehren.
+1. Skript herunterladen
+2. Skript nach **`C:\Scripts\Update-NotepadPlusPlus.ps1`** kopieren.
+3. zum Auführen zulassen (Rechstklick > Eigenschaften > Zulassen)
+4. Einmal manuell in einer **erhoehten** PowerShell-Sitzung (als Admin) ausfuehren.
 
 > ⚠️ **Wichtig: Ablageort vor dem ersten Start final festlegen.**
 > Beim ersten Lauf legt das Skript die geplante Aufgabe an und schreibt dabei den **aktuellen
@@ -79,15 +81,6 @@ selbst angelegte geplante Aufgabe.
 
 Wird automatisch anhand von `PROCESSOR_ARCHITECTURE` und `[Environment]::Is64BitOperatingSystem`
 bestimmt -- lädt den passenden Installer (`x64`, `x86` oder `arm64`) ohne manuelle Konfiguration.
-
----
-
-## Bekannte Annahmen
-
-- **Versionsquelle:** GitHub Releases API (`notepad-plus-plus/notepad-plus-plus`). Falls der
-  Server keinen direkten Zugriff auf GitHub hat, muss dies auf einen internen Mirror/Proxy
-  umgestellt werden.
-- **Log-Dateiname:** `...-Update.log` (als sinnvolle Interpretation von "udate" angenommen).
 
 ---
 
