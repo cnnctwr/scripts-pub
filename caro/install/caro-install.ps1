@@ -48,16 +48,6 @@ if (-not (Test-Path $ShortcutPath)) {
     Write-Host ""
 }
 
-# --- Bestaetigung ------------------------------------------------------------
-
-Write-Host "Das Skript laedt die aktuelle Version der CARO-Suite herunter, entpackt sie und installiert sie."
-Write-Host "Benutzerhandbuch, Lizenzinformationen und die Release Notes"
-Write-Host "findest du in diesem Ordner nach Abschluss der Installation:"
-Write-Host "$ExtractDir"
-Write-Host ""
-$Antwort = Read-Host "Fortfahren    (J/N)"
-if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
-
 # --- Download ----------------------------------------------------------------
 
 Write-Host "Lade herunter: $DownloadUrl"
@@ -88,6 +78,17 @@ try {
 
 Remove-Item -Path $ZipPath -Force
 Write-Host "ZIP-Datei geloescht."
+
+# --- Bestaetigung ------------------------------------------------------------
+
+Write-Host "Das Skript hat die aktuelle Version der CARO-Suite herunter geladen und entpackt."
+Write-Host "Die Dateien inklusive Benutzerhandbuch, Lizenzinformationen und Release Notes"
+Write-Host "findest du in diesem Ordner:"
+Write-Host "$ExtractDir"
+Write-Host ""
+Write-Host "Ich habe die Lizenzinformationen und die Release Notes (readme.txt) gelesen und akzeptiere diese."
+$Antwort = Read-Host "Fortfahren    (J/N)"
+if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
 
 # --- MSI suchen --------------------------------------------------------------
 
