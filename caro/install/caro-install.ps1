@@ -81,13 +81,16 @@ Write-Host "ZIP-Datei geloescht."
 
 # --- Bestaetigung ------------------------------------------------------------
 
+Write-Host ""
+Write-Host ""
 Write-Host "Das Skript hat die aktuelle Version der CARO-Suite herunter geladen und entpackt."
 Write-Host "Die Dateien inklusive Benutzerhandbuch, Lizenzinformationen und Release Notes"
-Write-Host "findest du in diesem Ordner:"
+Write-Host "befinden sich in diesem Ordner:"
 Write-Host "$ExtractDir"
 Write-Host ""
+Write-Host "Bitte bestätigen:"
 Write-Host "Ich habe die Lizenzinformationen und die Release Notes (readme.txt) gelesen und akzeptiere diese."
-$Antwort = Read-Host "Fortfahren    (J/N)"
+$Antwort = Read-Host "Mit der Installation der CARO-Suite fortfahren    (J/N)"
 if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
 
 # --- MSI suchen --------------------------------------------------------------
