@@ -79,7 +79,11 @@ try {
 Remove-Item -Path $ZipPath -Force
 Write-Host "ZIP-Datei geloescht."
 
-# --- Bestaetigung ------------------------------------------------------------
+# --- Readme.txt öffnen -------------------------------------------------------
+
+Start-Process "$ExtractDir\Readme.txt"
+
+# --- Bestaetigung abfragen ---------------------------------------------------
 
 Write-Host ""
 Write-Host ""
