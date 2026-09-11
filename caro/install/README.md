@@ -1,3 +1,8 @@
+# changelog
+
+- neue Reihenfolge: herunterladen, entpacken, Readme.txt anzeigen, Bestätigung einholen, installieren
+
+
 # CARO-Suite - Updater und Installer 
 
 Dieses Skript hält die **CARO-Suite für Berechtigungsmanagement** auf dem aktuellen Stand oder installiert diese falls noch nicht vorhanden.
