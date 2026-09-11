@@ -1,6 +1,6 @@
 # changelog
 
-- neue Reihenfolge: herunterladen, entpacken, Readme.txt anzeigen, Bestätigung einholen, installieren
+- 2026-09-11 neue Reihenfolge: herunterladen, entpacken, Readme.txt anzeigen, Bestätigung einholen, installieren
 
 
 # CARO-Suite - Updater und Installer 
