@@ -33,12 +33,13 @@ Beim ersten Start legt das Skript automatisch eine Verkuepfung namens **"CARO Au
 ## Was das Skript tut
 
 1. **Verkuepfung anlegen** -- einmalig beim ersten Start, danach uebersprungen.
-2. **Bestaetigung einholen** -- kurze Rueckfrage bevor etwas heruntergeladen wird. Im selben Hinweis steht der Pfad, unter dem Handbuch, Lizenz und Release Notes nach der Installation zu finden sind.
-3. **ZIP herunterladen** -- vom CUSATUM-Server in den Downloads-Ordner, Dateiname mit aktuellem Zeitstempel.
-4. **Entpacken** -- in einen Unterordner im Downloads-Ordner, ebenfalls mit Zeitstempel benannt.
-5. **ZIP loeschen** -- der entpackte Ordner bleibt erhalten.
-6. **Version pruefen** -- das Skript liest die Versionsnummer aus der MSI und vergleicht sie mit der installierten Version.
-7. **Installation:**
+2. **ZIP herunterladen** -- vom CUSATUM-Server in den Downloads-Ordner, Dateiname mit aktuellem Zeitstempel.
+3. **Entpacken** -- in einen Unterordner im Downloads-Ordner, ebenfalls mit Zeitstempel benannt.
+4. **ZIP loeschen** -- der entpackte Ordner bleibt erhalten.
+5. **Readme.txt anzeigen** -- Nutzer bekommt die Change wichtige Änderungen zu lesen die mit der Version einhergehen.
+6. **Bestaetigung einholen** -- Rueckfrage bezueglich Lizenz und Readme.txt / Release Notes vor der Installation
+7. **Version pruefen** -- das Skript liest die Versionsnummer aus der MSI und vergleicht sie mit der installierten Version.
+8. **Installation:**
    - **Neue Version oder Erstinstallation** -- laeuft automatisch mit Fortschrittsanzeige durch, kein Klicken noetig.
    - **Gleiche Version bereits installiert** -- zeigt den Wartungsdialog: Software reparieren, aendern oder entfernen.
 
