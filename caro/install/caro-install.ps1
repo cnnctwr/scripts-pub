@@ -1,7 +1,7 @@
 # ================================================================
 # CARO-Suite - Download, Entpacken & Installation
 # =================================================================
-# Dieses Skript lädt die aktuelle Version der CARO-Suite herunter, entpackt sie und installiert sie.
+# Dieses Skript laedt die aktuelle Version der CARO-Suite herunter, entpackt sie und installiert sie.
 # Es prüft auch, ob bereits eine Version installiert ist und zeigt entsprechend den Wartungsdialog an.
 #
 # Datei mit der Endung .ps1 auf dem CARO-Server speichern und mit PowerShell ausführen (Rechtsklick -> "Mit PowerShell ausführen").
@@ -93,11 +93,12 @@ Write-Host "Die Dateien inklusive Benutzerhandbuch, Lizenzinformationen und Rele
 Write-Host "befinden sich in diesem Ordner:"
 Write-Host "$ExtractDir"
 Write-Host ""
-Write-Host "Bitte bestätigen:"
+Write-Host "Bitte bestaetigen:"
+Write-Host ""
 Write-Host "Ich habe die Lizenzinformationen (Lizensvereinbarung.txt) und die Release Notes (Readme.txt) gelesen und akzeptiere diese."
+Write-Host ""
 $Antwort = Read-Host "Mit der Installation der CARO-Suite fortfahren    (J/N)"
 if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
-
 # --- MSI suchen --------------------------------------------------------------
 
 $MsiFile = Get-ChildItem -Path $ExtractDir -Filter "*.msi" -Recurse | Select-Object -First 1
