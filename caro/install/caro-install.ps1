@@ -79,9 +79,10 @@ try {
 Remove-Item -Path $ZipPath -Force
 Write-Host "ZIP-Datei geloescht."
 
-# --- Readme.txt öffnen -------------------------------------------------------
+# --- Readme.txt und Lizenzvereinbahrung oeffnen -------------------------------------------------------
 
 Start-Process "$ExtractDir\Readme.txt"
+Start-Process "$ExtractDir\Lizensvereinbarung.txt"
 
 # --- Bestaetigung abfragen ---------------------------------------------------
 
@@ -93,7 +94,7 @@ Write-Host "befinden sich in diesem Ordner:"
 Write-Host "$ExtractDir"
 Write-Host ""
 Write-Host "Bitte bestätigen:"
-Write-Host "Ich habe die Lizenzinformationen und die Release Notes (readme.txt) gelesen und akzeptiere diese."
+Write-Host "Ich habe die Lizenzinformationen (Lizensvereinbarung.txt) und die Release Notes (Readme.txt) gelesen und akzeptiere diese."
 $Antwort = Read-Host "Mit der Installation der CARO-Suite fortfahren    (J/N)"
 if ($Antwort -notmatch "^[Jj]$") { Write-Host "Abgebrochen."; exit 0 }
 
