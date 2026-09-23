@@ -386,7 +386,7 @@ function Remove-EventLogReadersMember {
 # betroffene Einstellung sicherheitshalber NICHT angeboten, statt blind die
 # vermeintlich richtige Unterkategorie zu setzen.
 $script:AuditSubcategoryMap = [ordered]@{
-    'AccountMgmt-User'          = @{ Guid = '0CCE9235-69AE-11D9-BED3-505054503030'; Expect = 'onto' }
+    'AccountMgmt-User'          = @{ Guid = '0CCE9235-69AE-11D9-BED3-505054503030'; Expect = 'ont' }
     'AccountMgmt-Computer'      = @{ Guid = '0CCE9236-69AE-11D9-BED3-505054503030'; Expect = 'Computer' }
     'AccountMgmt-SecurityGroup' = @{ Guid = '0CCE9237-69AE-11D9-BED3-505054503030'; Expect = 'Sicherheitsgruppe' }
     'AccountMgmt-DistGroup'     = @{ Guid = '0CCE9238-69AE-11D9-BED3-505054503030'; Expect = 'Verteilergruppe' }
@@ -598,7 +598,7 @@ function New-CaroSettingDefinitions {
             Id              = "Audit-$key"
             Title           = $label
             Description     = "Setzt die Ueberwachungs-Unterkategorie '$($info.ResolvedName)' (GUID {$guid}) auf 'Erfolg ueberwachen', damit die zugehoerigen AD-Aenderungen im Security-Eventlog protokolliert werden. Aenderung wirkt sofort (kein gpupdate noetig, da lokal via auditpol gesetzt)."
-            CommandTemplate = "auditpol /set /subcategory:""{$guid}"" /success:enable /failure:disable   (Ziel: {0})"
+            CommandTemplate = "auditpol /set /subcategory:""{{$guid}}"" /success:enable /failure:disable   (Ziel: {0})"
             Get             = { (Get-AuditSubcategoryInfo -Guid $guid).Inclusion }.GetNewClosure()
             Set             = { param($Value) Set-AuditSubcategory -Guid $guid -Value $Value }.GetNewClosure()
             Format          = { param($v) $v }
