@@ -268,7 +268,14 @@ function Invoke-CaroSetting {
 
     if ($readError) {
         Write-Log -Level ERROR -Message "[$($Def.Id)] Fehler beim Lesen des aktuellen Werts: $readError"
-        Add-BackupEntry -Id $Def.Id -Title $Def.Title -Command '' `
+        # $cmd wird trotz Lesefehler berechnet (haengt nur vom bekannten
+        # Zielwert ab, nicht vom fehlgeschlagenen Ist-Wert) - sonst fehlen
+        # z.B. bei EventLogReaders spaeter Angaben wie der Kontoname im
+        # Backup, was die automatische Konto-Erkennung bei -RestoreFrom
+        # verhindert.
+        $targetDisplay = & $Def.Format $TargetValue
+        $cmd = $Def.CommandTemplate -f $targetDisplay
+        Add-BackupEntry -Id $Def.Id -Title $Def.Title -Command $cmd `
             -OriginalValueRaw $null -OriginalValueDisplay "FEHLER: $readError" `
             -NewValueRaw $null -NewValueDisplay '' -Status 'Fehler beim Lesen'
         return 'Error'
