@@ -352,14 +352,14 @@ function Get-BareUserName {
 
 function Get-EventLogReadersMembers {
     try {
-        $grp = [ADSI]"WinNT://$hostName/Event Log Readers,group"
+        $grp = [ADSI]"WinNT://$script:LocalGroupHost/Event Log Readers,group"
         $names = @()
         foreach ($m in $grp.Invoke('Members')) {
             $names += $m.GetType().InvokeMember('Name', 'GetProperty', $null, $m, $null)
         }
         return $names
     } catch {
-        throw "Gruppenmitglieder von 'Event Log Readers' konnten nicht gelesen werden: $($_.Exception.Message)"
+        throw "Gruppenmitglieder von 'Event Log Readers' konnten nicht gelesen werden (WinNT://$script:LocalGroupHost/...): $($_.Exception.Message)"
     }
 }
 
@@ -674,6 +674,7 @@ Backup     : $BackupFile
 
 Write-Log -Level INFO -Message "Script gestartet auf $hostName. LogFile=$LogFile BackupFile=$BackupFile DesiredFile=$DesiredFile RestoreFrom=$RestoreFrom"
 
+$script:LocalGroupHost = $hostName
 try {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem
     Write-Log -Level INFO -Message "Betriebssystem: $($os.Caption) ($($os.Version))"
@@ -688,6 +689,19 @@ try {
     if ($domainRole -notin 4, 5) {
         Write-Host "WARNUNG: Dieser Server scheint kein Domaenencontroller zu sein (DomainRole=$domainRole)." -ForegroundColor Red
         Write-Log -Level WARN -Message "DomainRole=$domainRole - kein (RO-)Domaenencontroller erkannt."
+    } else {
+        # Auf einem DC gibt es keine eigene lokale SAM-Datenbank - "lokale"
+        # Gruppen wie Event Log Readers liegen im Builtin-Container der
+        # Domaene und sind ueber den WinNT-Provider nur unter dem NetBIOS-
+        # Domaenennamen erreichbar, nicht unter dem Servernamen. net.exe
+        # (Add-/Remove-EventLogReadersMember) leitet das intern bereits
+        # korrekt um und braucht diese Unterscheidung nicht.
+        if ($env:USERDOMAIN) {
+            $script:LocalGroupHost = $env:USERDOMAIN
+            Write-Log -Level INFO -Message "Domaenencontroller erkannt - lokale Gruppen werden ueber NetBIOS-Domaenenname '$script:LocalGroupHost' angesprochen."
+        } else {
+            Write-Log -Level WARN -Message "Domaenencontroller erkannt, aber USERDOMAIN nicht gesetzt - falle zurueck auf Servernamen '$script:LocalGroupHost' (Gruppenmitgliedschaft evtl. nicht lesbar)."
+        }
     }
 } catch {
     Write-Log -Level WARN -Message "Betriebssystem-/Rolleninformation konnte nicht ermittelt werden: $($_.Exception.Message)"
