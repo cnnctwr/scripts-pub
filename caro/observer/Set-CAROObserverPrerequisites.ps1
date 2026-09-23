@@ -357,7 +357,37 @@ function Get-BareUserName {
     return $Account
 }
 
+function Get-EventLogReadersMembersViaLdap {
+    # Auf einem DC liegt "Event Log Readers" als Builtin-Gruppe direkt in
+    # Active Directory - Lesen per LDAP (funktioniert nachweislich, da auch
+    # die Domain-DN-Ermittlung darueber laeuft) statt ueber den WinNT-
+    # Provider, der auf NetBIOS-Namensaufloesung angewiesen ist und in
+    # manchen Netzwerken (z.B. Labs ohne NetBIOS/WINS) fehlschlaegt.
+    $ldapPath = "LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
+    $grp = [ADSI]$ldapPath
+    $memberProp = $grp.Properties['member']
+    $memberDns = if ($memberProp -and $memberProp.Count -gt 0) { @($memberProp.Value) } else { @() }
+    $names = @()
+    foreach ($dn in $memberDns) {
+        try {
+            $memberEntry = [ADSI]"LDAP://$dn"
+            $sam = $memberEntry.Properties['sAMAccountName'].Value
+            if ($sam) { $names += [string]$sam }
+        } catch {
+            Write-Log -Level WARN -Message "Mitglied '$dn' der Gruppe 'Event Log Readers' konnte nicht aufgeloest werden (uebersprungen bei der Pruefung): $($_.Exception.Message)"
+        }
+    }
+    return $names
+}
+
 function Get-EventLogReadersMembers {
+    if ($script:IsDomainController -and $script:DomainDN) {
+        try {
+            return Get-EventLogReadersMembersViaLdap
+        } catch {
+            throw "Gruppenmitglieder von 'Event Log Readers' (Builtin-Container, LDAP) konnten nicht gelesen werden: $($_.Exception.Message)"
+        }
+    }
     try {
         $grp = [ADSI]"WinNT://$script:LocalGroupHost/Event Log Readers,group"
         $names = @()
@@ -682,6 +712,7 @@ Backup     : $BackupFile
 Write-Log -Level INFO -Message "Script gestartet auf $hostName. LogFile=$LogFile BackupFile=$BackupFile DesiredFile=$DesiredFile RestoreFrom=$RestoreFrom"
 
 $script:LocalGroupHost = $hostName
+$script:IsDomainController = $false
 try {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem
     Write-Log -Level INFO -Message "Betriebssystem: $($os.Caption) ($($os.Version))"
@@ -699,16 +730,14 @@ try {
     } else {
         # Auf einem DC gibt es keine eigene lokale SAM-Datenbank - "lokale"
         # Gruppen wie Event Log Readers liegen im Builtin-Container der
-        # Domaene und sind ueber den WinNT-Provider nur unter dem NetBIOS-
-        # Domaenennamen erreichbar, nicht unter dem Servernamen. net.exe
-        # (Add-/Remove-EventLogReadersMember) leitet das intern bereits
-        # korrekt um und braucht diese Unterscheidung nicht.
-        if ($env:USERDOMAIN) {
-            $script:LocalGroupHost = $env:USERDOMAIN
-            Write-Log -Level INFO -Message "Domaenencontroller erkannt - lokale Gruppen werden ueber NetBIOS-Domaenenname '$script:LocalGroupHost' angesprochen."
-        } else {
-            Write-Log -Level WARN -Message "Domaenencontroller erkannt, aber USERDOMAIN nicht gesetzt - falle zurueck auf Servernamen '$script:LocalGroupHost' (Gruppenmitgliedschaft evtl. nicht lesbar)."
-        }
+        # Domaene. Get-EventLogReadersMembers liest sie deshalb per LDAP
+        # (kein NetBIOS noetig - $script:LocalGroupHost wird dann nicht
+        # mehr fuer das Lesen benutzt, nur noch als Fallback-Info).
+        # net.exe (Add-/Remove-EventLogReadersMember) leitet lokale
+        # Gruppenoperationen auf einem DC intern bereits korrekt um und
+        # braucht diese Unterscheidung nicht.
+        $script:IsDomainController = $true
+        Write-Log -Level INFO -Message "Domaenencontroller erkannt - Gruppenmitgliedschaft von 'Event Log Readers' wird per LDAP aus dem Builtin-Container gelesen (NetBIOS-unabhaengig)."
     }
 } catch {
     Write-Log -Level WARN -Message "Betriebssystem-/Rolleninformation konnte nicht ermittelt werden: $($_.Exception.Message)"

@@ -73,6 +73,46 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 .\Set-CAROObserverPrerequisites.ps1 -DesiredSettingsFile ".\caro-example-config.json"
 ```
 
+## Best Practice: Empfohlener Ablauf beim ersten Einsatz auf einem Server
+
+1. **Bestandsaufnahme, bevor irgendetwas angefasst wird:**
+   ```powershell
+   .\Set-CAROObserverPrerequisites.ps1 -ReportOnly -ServiceAccount "CUSATUM\sa-caro"
+   ```
+   Das Servicekonto hier mit angeben — ohne `-ServiceAccount` fehlt der Schritt
+   `EventLogReaders` komplett im Report, da er ohne bekanntes Konto gar nicht
+   erst geprüft werden kann; alle anderen Einstellungen sind davon unabhängig.
+   Die dabei erzeugte `CARO-Backup_*.json` dokumentiert den **Ist-Zustand vor
+   jeder Änderung** - rein informativ. **Wichtig:** Diese Report-Only-Datei
+   eignet sich NICHT für `-RestoreFrom` - im Report-Modus wird nichts als
+   `Geändert` markiert (nur `Nur gelesen (Report) - ...`), und `-RestoreFrom`
+   wirkt ausschließlich auf `Geändert`-Einträge. Sie dient ausschließlich der
+   Dokumentation/Verifikation, nicht dem Rollback.
+
+2. **Erster echter Lauf, mit demselben Servicekonto:**
+   ```powershell
+   .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
+   ```
+   Jede Einstellung einzeln bestätigen wie gewohnt. Die dabei entstehende
+   `CARO-Backup_*.json` ist die für ein **echtes Rollback nutzbare** Datei -
+   sie enthält für jede tatsächlich geänderte Einstellung sowohl den
+   ursprünglichen als auch den neuen Wert.
+
+3. **Diese Backup-Datei sichern**, sofort nach dem ersten Lauf: an einen
+   sicheren, klar benannten Ort kopieren (z. B. außerhalb des
+   `CARO-Setup-Logs`-Ordners), bevor weitere Läufe stattfinden. Es ist die
+   einzige Quelle für den echten Urzustand des Servers - jeder spätere Lauf
+   sieht als „aktuell" bereits das Ergebnis dieses ersten Laufs, nicht mehr
+   den ursprünglichen Zustand. Geht diese eine Datei verloren, lässt sich der
+   Urzustand nicht mehr automatisiert wiederherstellen.
+
+4. **Rollback bei Bedarf:**
+   ```powershell
+   .\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 2>"
+   ```
+   Empfehlenswert: danach einmal mit `-ReportOnly` gegenprüfen, dass wieder
+   alles dem Urzustand entspricht, bevor erneut angewendet wird.
+
 ## Parameter
 
 | Parameter               | Typ     | Default                  | Beschreibung                                                                                                   |
