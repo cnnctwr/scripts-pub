@@ -403,17 +403,66 @@ function Get-EventLogReadersMembers {
     }
 }
 
+function Resolve-AdAccountDN {
+    # net.exe erwartet auf einem DC den lokalisierten SAM-Alias-Namen der
+    # Builtin-Gruppe (z.B. deutsch), waehrend LDAP den sprachneutralen CN
+    # "Event Log Readers" verwendet - deshalb funktioniert "net localgroup"
+    # auf einem DC nicht zuverlaessig. Fuer die LDAP-Variante wird stattdessen
+    # die Distinguished Name (DN) des Zielkontos per LDAP-Suche aufgeloest.
+    param([string]$SamAccountName)
+    $escaped = $SamAccountName -replace '([\\\*\(\)\x00])', '\$1'
+    $searcher = New-Object System.DirectoryServices.DirectorySearcher
+    $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$script:DomainDN")
+    $searcher.Filter = "(sAMAccountName=$escaped)"
+    $searcher.PropertiesToLoad.Add('distinguishedName') | Out-Null
+    $result = $searcher.FindOne()
+    if (-not $result) { throw "Konto '$SamAccountName' wurde per LDAP-Suche (sAMAccountName) in der Domaene nicht gefunden." }
+    return [string]$result.Properties['distinguishedname'][0]
+}
+
+function Add-EventLogReadersMemberViaLdap {
+    param([string]$BareUser)
+    $dn = Resolve-AdAccountDN -SamAccountName $BareUser
+    $grp = [ADSI]"LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
+    $grp.Add("LDAP://$dn")
+    $grp.psbase.CommitChanges()
+}
+
+function Remove-EventLogReadersMemberViaLdap {
+    param([string]$BareUser)
+    $dn = Resolve-AdAccountDN -SamAccountName $BareUser
+    $grp = [ADSI]"LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
+    $grp.Remove("LDAP://$dn")
+    $grp.psbase.CommitChanges()
+}
+
 function Add-EventLogReadersMember {
     param([string]$Account)
+    if ($script:IsDomainController -and $script:DomainDN) {
+        try {
+            Add-EventLogReadersMemberViaLdap -BareUser (Get-BareUserName -Account $Account)
+            return
+        } catch {
+            throw "Hinzufuegen von '$Account' zur Builtin-Gruppe 'Event Log Readers' (LDAP) fehlgeschlagen: $($_.Exception.Message)"
+        }
+    }
     # "Event Log Readers" ist der feste, nicht lokalisierte interne Gruppenname
-    # (siehe PDF S.4: "Gruppenname: Event Log Readers (built-in)") - net.exe
-    # akzeptiert diesen Namen unabhaengig von der Sprache des Betriebssystems.
+    # (siehe PDF S.4: "Gruppenname: Event Log Readers (built-in)") - gilt fuer
+    # net.exe nur auf einem Nicht-DC (dort echte lokale SAM-Gruppe).
     $result = & net localgroup "Event Log Readers" "$Account" /add 2>&1
     if ($LASTEXITCODE -ne 0) { throw "net localgroup /add fehlgeschlagen (Exit $LASTEXITCODE): $result" }
 }
 
 function Remove-EventLogReadersMember {
     param([string]$Account)
+    if ($script:IsDomainController -and $script:DomainDN) {
+        try {
+            Remove-EventLogReadersMemberViaLdap -BareUser (Get-BareUserName -Account $Account)
+            return
+        } catch {
+            throw "Entfernen von '$Account' aus der Builtin-Gruppe 'Event Log Readers' (LDAP) fehlgeschlagen: $($_.Exception.Message)"
+        }
+    }
     $result = & net localgroup "Event Log Readers" "$Account" /delete 2>&1
     if ($LASTEXITCODE -ne 0) { throw "net localgroup /delete fehlgeschlagen (Exit $LASTEXITCODE): $result" }
 }
