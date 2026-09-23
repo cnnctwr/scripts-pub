@@ -365,13 +365,16 @@ function Get-EventLogReadersMembersViaLdap {
     # manchen Netzwerken (z.B. Labs ohne NetBIOS/WINS) fehlschlaegt.
     $ldapPath = "LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
     $grp = [ADSI]$ldapPath
-    $memberProp = $grp.Properties['member']
+    # .psbase. umgeht PowerShells ADSI-Eigenschaftsadapter, der .Properties
+    # (genau wie zuvor .Options/.ObjectSecurity) abfangen und dadurch
+    # unauffindbar machen kann ("Cannot index into a null array").
+    $memberProp = $grp.psbase.Properties['member']
     $memberDns = if ($memberProp -and $memberProp.Count -gt 0) { @($memberProp.Value) } else { @() }
     $names = @()
     foreach ($dn in $memberDns) {
         try {
             $memberEntry = [ADSI]"LDAP://$dn"
-            $sam = $memberEntry.Properties['sAMAccountName'].Value
+            $sam = $memberEntry.psbase.Properties['sAMAccountName'].Value
             if ($sam) { $names += [string]$sam }
         } catch {
             Write-Log -Level WARN -Message "Mitglied '$dn' der Gruppe 'Event Log Readers' konnte nicht aufgeloest werden (uebersprungen bei der Pruefung): $($_.Exception.Message)"
