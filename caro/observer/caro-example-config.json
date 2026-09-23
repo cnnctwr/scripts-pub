@@ -1,0 +1,12 @@
+{
+  "ServiceAccount": "CUSATUM\\sa-caro",
+  "MaxLogSizeKB": 131072,
+  "Scope": {
+    "EventLogReaders": true,
+    "ForceSubcategoryPolicy": true,
+    "AuditPolicies": true,
+    "SecurityLogConfig": true,
+    "Sacl": true,
+    "Firewall": false
+  }
+}
