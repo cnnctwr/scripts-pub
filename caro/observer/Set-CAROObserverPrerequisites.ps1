@@ -264,7 +264,7 @@ function Invoke-CaroSetting {
 
     $current = $null
     $readError = $null
-    try { $current = & $Def.Get } catch { $readError = $_.Exception.Message }
+    try { $current = & $Def.Get $Def } catch { $readError = $_.Exception.Message }
 
     if ($readError) {
         Write-Log -Level ERROR -Message "[$($Def.Id)] Fehler beim Lesen des aktuellen Werts: $readError"
@@ -314,9 +314,9 @@ function Invoke-CaroSetting {
     }
 
     try {
-        & $Def.Set $TargetValue
+        & $Def.Set $Def $TargetValue
         Start-Sleep -Milliseconds 200
-        $verify = & $Def.Get
+        $verify = & $Def.Get $Def
         $verifyDisplay = & $Def.Format $verify
         $verifyOk = if ($Def.ContainsKey('Compare')) { & $Def.Compare $verify $TargetValue } else { $verifyDisplay -eq $targetDisplay }
         if ($verifyOk) {
@@ -469,11 +469,14 @@ $script:RequiredAdRights = [System.DirectoryServices.ActiveDirectoryRights] (
 
 function Get-DomainSaclEntry {
     $de = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$script:DomainDN")
-    # SecurityMasks=Sacl ist der Schluessel, damit .NET ueberhaupt die
-    # Ueberwachungs-ACEs (statt nur DACL/Owner) liefert; erfordert aktives
-    # SeSecurityPrivilege (siehe CaroPrivilege.Enable weiter unten im Hauptteil).
-    $de.Options.SecurityMasks = [System.DirectoryServices.SecurityMasks]::Sacl
-    $sd = $de.ObjectSecurity
+    # .psbase. umgeht PowerShells eigenen ADSI-Eigenschaftsadapter, der bei
+    # DirectoryEntry-Objekten seltener genutzte .NET-Member wie "Options"
+    # ueberlagern und dadurch unauffindbar machen kann ("property cannot be
+    # found"). SecurityMasks=Sacl ist der Schluessel, damit .NET ueberhaupt
+    # die Ueberwachungs-ACEs (statt nur DACL/Owner) liefert; erfordert
+    # aktives SeSecurityPrivilege (siehe CaroPrivilege.Enable im Hauptteil).
+    $de.psbase.Options.SecurityMasks = [System.DirectoryServices.SecurityMasks]::Sacl
+    $sd = $de.psbase.ObjectSecurity
     $rules = $sd.GetAuditRules($true, $true, [System.Security.Principal.SecurityIdentifier])
     foreach ($r in $rules) {
         if ($r.IdentityReference -eq $script:EveryoneSid -and
@@ -489,15 +492,15 @@ function Get-DomainSaclEntry {
 function Set-DomainSaclEntry {
     param([bool]$Present)
     $de = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$script:DomainDN")
-    $de.Options.SecurityMasks = [System.DirectoryServices.SecurityMasks]::Sacl
-    $sd = $de.ObjectSecurity
+    $de.psbase.Options.SecurityMasks = [System.DirectoryServices.SecurityMasks]::Sacl
+    $sd = $de.psbase.ObjectSecurity
     $rule = New-Object System.DirectoryServices.ActiveDirectoryAuditRule(
         $script:EveryoneSid, $script:RequiredAdRights,
         [System.Security.AccessControl.AuditFlags]::Success,
         [System.DirectoryServices.ActiveDirectorySecurityInheritance]::All)
     if ($Present) { $sd.AddAuditRule($rule) } else { $sd.RemoveAuditRuleSpecific($rule) }
-    $de.ObjectSecurity = $sd
-    $de.CommitChanges()
+    $de.psbase.ObjectSecurity = $sd
+    $de.psbase.CommitChanges()
 }
 #endregion
 
@@ -542,12 +545,14 @@ function New-CaroSettingDefinitions {
             Title           = 'Servicekonto zur Gruppe "Event Log Readers" hinzufuegen'
             Description     = "Das CARO-Servicekonto '$svcAccountCopy' muss lokal Mitglied der Gruppe 'Event Log Readers' sein, damit es das Security-Eventlog auslesen darf (nur noetig, falls das Konto nicht bereits administrative oder Nur-Lese-Rechte besitzt). PDF S.4."
             CommandTemplate = "net localgroup ""Event Log Readers"" ""$svcAccountCopy"" /add   (Ziel: Mitglied={0})"
-            Get             = { [bool](Get-EventLogReadersMembers | Where-Object { $_ -ieq $bareUser }) }.GetNewClosure()
+            Account         = $svcAccountCopy
+            BareUser        = $bareUser
+            Get             = { param($Def) [bool](Get-EventLogReadersMembers | Where-Object { $_ -ieq $Def.BareUser }) }
             Set             = {
-                param($Value)
-                if ($Value) { Add-EventLogReadersMember -Account $svcAccountCopy }
-                else { Remove-EventLogReadersMember -Account $svcAccountCopy }
-            }.GetNewClosure()
+                param($Def, $Value)
+                if ($Value) { Add-EventLogReadersMember -Account $Def.Account }
+                else { Remove-EventLogReadersMember -Account $Def.Account }
+            }
             Format          = { param($v) if ($v) { 'Mitglied' } else { 'Kein Mitglied' } }
             Desired         = $true
         }
@@ -564,11 +569,12 @@ function New-CaroSettingDefinitions {
         Description     = 'Muss als Erstes aktiviert sein, sonst koennen die weiter unten gesetzten Unterkategorien (Kontoverwaltung, DS-Zugriff, Richtlinienaenderung) von der aelteren, groben Kategorie-Richtlinie ausser Kraft gesetzt werden. PDF S.7, Schritt 4.'
         CommandTemplate = 'Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name SCENoApplyLegacyAuditPolicy -Type DWord -Value {0}'
         Get             = {
+            param($Def)
             $v = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Lsa' -Name 'SCENoApplyLegacyAuditPolicy' -ErrorAction SilentlyContinue).SCENoApplyLegacyAuditPolicy
             if ($null -eq $v) { 'ABSENT' } else { [string]$v }
         }
         Set             = {
-            param($Value)
+            param($Def, $Value)
             if ($Value -eq 'ABSENT') {
                 Remove-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Lsa' -Name 'SCENoApplyLegacyAuditPolicy' -ErrorAction SilentlyContinue
             } else {
@@ -599,8 +605,9 @@ function New-CaroSettingDefinitions {
             Title           = $label
             Description     = "Setzt die Ueberwachungs-Unterkategorie '$($info.ResolvedName)' (GUID {$guid}) auf 'Erfolg ueberwachen', damit die zugehoerigen AD-Aenderungen im Security-Eventlog protokolliert werden. Aenderung wirkt sofort (kein gpupdate noetig, da lokal via auditpol gesetzt)."
             CommandTemplate = "auditpol /set /subcategory:""{{$guid}}"" /success:enable /failure:disable   (Ziel: {0})"
-            Get             = { (Get-AuditSubcategoryInfo -Guid $guid).Inclusion }.GetNewClosure()
-            Set             = { param($Value) Set-AuditSubcategory -Guid $guid -Value $Value }.GetNewClosure()
+            Guid            = $guid
+            Get             = { param($Def) (Get-AuditSubcategoryInfo -Guid $Def.Guid).Inclusion }
+            Set             = { param($Def, $Value) Set-AuditSubcategory -Guid $Def.Guid -Value $Value }
             Format          = { param($v) $v }
             Desired         = 'Erfolg'
         }
@@ -613,8 +620,8 @@ function New-CaroSettingDefinitions {
         Title           = 'Maximale Groesse und Aufbewahrung des Security-Eventlogs'
         Description     = "Setzt die maximale Groesse des Sicherheitsereignisprotokolls auf mindestens $MaxLogSizeKB KB und aktiviert 'Ereignisse bei Bedarf ueberschreiben (aelteste zuerst)', damit keine Ereignisse verloren gehen, bevor der CARO-AD-Observer sie ausliest. PDF S.10-11."
         CommandTemplate = '$cfg = Get-WinEvent -ListLog Security; $cfg.MaximumSizeInBytes = <KB>*1KB; $cfg.LogMode = "Circular"; $cfg.SaveChanges()   (Ziel: {0})'
-        Get             = { Get-SecurityLogConfig }
-        Set             = { param($Value) Set-SecurityLogConfig -Value $Value }
+        Get             = { param($Def) Get-SecurityLogConfig }
+        Set             = { param($Def, $Value) Set-SecurityLogConfig -Value $Value }
         Format          = { param($v) "Max. Groesse: $($v.MaxKB) KB, Modus: $($v.Mode)" }
         Compare         = { param($c, $t) ($c.MaxKB -ge $t.MaxKB) -and ($c.Mode -eq $t.Mode) }
         Desired         = [pscustomobject]@{ MaxKB = $MaxLogSizeKB; Mode = 'Circular' }
@@ -627,8 +634,8 @@ function New-CaroSettingDefinitions {
             Title           = 'SACL auf Domain-Objekt setzen (Jeder / Erfolg ueberwachen)'
             Description     = "Fuegt am Domain-Objekt '$script:DomainDN' eine Ueberwachungsregel fuer 'Jeder' hinzu: Typ=Zulassen, Anwenden auf='Dieses und alle untergeordneten Objekte', Rechte=Alle Eigenschaften schreiben/Loeschen/Unterstruktur loeschen/Berechtigungen aendern/Alle untergeordneten Objekte erstellen/Alle untergeordneten Objekte loeschen. Ohne diesen Eintrag erzeugt Windows trotz aktiver Audit-Richtlinien keine AD-Aenderungsereignisse. Muss nur auf EINEM DC gesetzt werden (repliziert automatisch). PDF S.12-17."
             CommandTemplate = '[DirectoryEntry SACL] Jeder / Zulassen / Erfolg / Dieses+untergeordnete Objekte / WriteProperty,Delete,DeleteTree,WriteDacl,CreateChild,DeleteChild -> {0}'
-            Get             = { [bool](Get-DomainSaclEntry) }
-            Set             = { param($Value) Set-DomainSaclEntry -Present ([bool]$Value) }
+            Get             = { param($Def) [bool](Get-DomainSaclEntry) }
+            Set             = { param($Def, $Value) Set-DomainSaclEntry -Present ([bool]$Value) }
             Format          = { param($v) if ($v) { 'ACE vorhanden' } else { 'ACE fehlt' } }
             Desired         = $true
         }
@@ -643,8 +650,9 @@ function New-CaroSettingDefinitions {
             Title           = "Firewall-Regel aktivieren: $ruleLabel"
             Description     = "Aktiviert die eingehende Windows-Firewall-Regel '$ruleLabel' (interner Name: $ruleName), damit der CARO-Server das Security-Eventlog dieses Domaenencontrollers remote auslesen darf. Muss auf JEDEM zu ueberwachenden DC ausgefuehrt werden. PDF S.17-18."
             CommandTemplate = "Enable-NetFirewallRule -Name '$ruleName'   (Ziel: Aktiviert={0})"
-            Get             = { Get-CaroFirewallRuleEnabled -RuleName $ruleName }.GetNewClosure()
-            Set             = { param($Value) Set-CaroFirewallRuleEnabled -RuleName $ruleName -Value ([bool]$Value) }.GetNewClosure()
+            RuleName        = $ruleName
+            Get             = { param($Def) Get-CaroFirewallRuleEnabled -RuleName $Def.RuleName }
+            Set             = { param($Def, $Value) Set-CaroFirewallRuleEnabled -RuleName $Def.RuleName -Value ([bool]$Value) }
             Format          = { param($v) if ($v) { 'Aktiviert' } else { 'Deaktiviert' } }
             Desired         = $true
         }
