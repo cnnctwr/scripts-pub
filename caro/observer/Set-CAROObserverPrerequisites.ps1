@@ -357,58 +357,36 @@ function Get-BareUserName {
     return $Account
 }
 
-function Get-EventLogReadersMembersViaLdap {
-    # Auf einem DC liegt "Event Log Readers" als Builtin-Gruppe direkt in
-    # Active Directory - Lesen per LDAP (funktioniert nachweislich, da auch
-    # die Domain-DN-Ermittlung darueber laeuft) statt ueber den WinNT-
-    # Provider, der auf NetBIOS-Namensaufloesung angewiesen ist und in
-    # manchen Netzwerken (z.B. Labs ohne NetBIOS/WINS) fehlschlaegt.
-    $ldapPath = "LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
-    $grp = [ADSI]$ldapPath
-    # .psbase. umgeht PowerShells ADSI-Eigenschaftsadapter, der .Properties
-    # (genau wie zuvor .Options/.ObjectSecurity) abfangen und dadurch
-    # unauffindbar machen kann ("Cannot index into a null array").
-    $memberProp = $grp.psbase.Properties['member']
-    $memberDns = if ($memberProp -and $memberProp.Count -gt 0) { @($memberProp.Value) } else { @() }
-    $names = @()
-    foreach ($dn in $memberDns) {
-        try {
-            $memberEntry = [ADSI]"LDAP://$dn"
-            $sam = $memberEntry.psbase.Properties['sAMAccountName'].Value
-            if ($sam) { $names += [string]$sam }
-        } catch {
-            Write-Log -Level WARN -Message "Mitglied '$dn' der Gruppe 'Event Log Readers' konnte nicht aufgeloest werden (uebersprungen bei der Pruefung): $($_.Exception.Message)"
-        }
-    }
-    return $names
-}
+# Well-Known-SID von BUILTIN\Event Log Readers - weltweit auf jedem Windows
+# identisch, unabhaengig von Sprache. Name (CN, SamAccountName) kann je nach
+# Sprachversion abweichen - bestaetigt: auf einem deutschen System sind CN
+# UND SamAccountName "Ereignisprotokollleser", nicht "Event Log Readers".
+# Die Gruppe wird deshalb nie ueber einen angenommenen Namen angesprochen,
+# sondern immer ueber diese SID aufgeloest.
+$script:EventLogReadersSid = 'S-1-5-32-573'
 
-function Get-EventLogReadersMembers {
+function Get-EventLogReadersGroupIdentity {
+    $sid = New-Object System.Security.Principal.SecurityIdentifier($script:EventLogReadersSid)
+    $name = ($sid.Translate([System.Security.Principal.NTAccount]).Value -split '\\')[-1]
+    $dn = $null
     if ($script:IsDomainController -and $script:DomainDN) {
-        try {
-            return Get-EventLogReadersMembersViaLdap
-        } catch {
-            throw "Gruppenmitglieder von 'Event Log Readers' (Builtin-Container, LDAP) konnten nicht gelesen werden: $($_.Exception.Message)"
+        if ($script:AdModuleAvailable) {
+            try {
+                $grp = Get-ADGroup -Filter "SID -eq '$($script:EventLogReadersSid)'" -ErrorAction Stop
+                if ($grp) {
+                    $dn = $grp.DistinguishedName
+                    $name = $grp.SamAccountName
+                }
+            } catch {
+                Write-Log -Level WARN -Message "Get-ADGroup fuer Event Log Readers (SID $($script:EventLogReadersSid)) fehlgeschlagen, falle auf CN-Konstruktion zurueck: $($_.Exception.Message)"
+            }
         }
+        if (-not $dn) { $dn = "CN=$name,CN=Builtin,$script:DomainDN" }
     }
-    try {
-        $grp = [ADSI]"WinNT://$script:LocalGroupHost/Event Log Readers,group"
-        $names = @()
-        foreach ($m in $grp.Invoke('Members')) {
-            $names += $m.GetType().InvokeMember('Name', 'GetProperty', $null, $m, $null)
-        }
-        return $names
-    } catch {
-        throw "Gruppenmitglieder von 'Event Log Readers' konnten nicht gelesen werden (WinNT://$script:LocalGroupHost/...): $($_.Exception.Message)"
-    }
+    return [pscustomobject]@{ Name = $name; DN = $dn }
 }
 
 function Resolve-AdAccountDN {
-    # net.exe erwartet auf einem DC den lokalisierten SAM-Alias-Namen der
-    # Builtin-Gruppe (z.B. deutsch), waehrend LDAP den sprachneutralen CN
-    # "Event Log Readers" verwendet - deshalb funktioniert "net localgroup"
-    # auf einem DC nicht zuverlaessig. Fuer die LDAP-Variante wird stattdessen
-    # die Distinguished Name (DN) des Zielkontos per LDAP-Suche aufgeloest.
     param([string]$SamAccountName)
     $escaped = $SamAccountName -replace '([\\\*\(\)\x00])', '\$1'
     $searcher = New-Object System.DirectoryServices.DirectorySearcher
@@ -420,50 +398,107 @@ function Resolve-AdAccountDN {
     return [string]$result.Properties['distinguishedname'][0]
 }
 
-function Add-EventLogReadersMemberViaLdap {
-    param([string]$BareUser)
-    $dn = Resolve-AdAccountDN -SamAccountName $BareUser
-    $grp = [ADSI]"LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
-    $grp.Add("LDAP://$dn")
-    $grp.psbase.CommitChanges()
+function Get-EventLogReadersMembersViaLdap {
+    param([string]$GroupDN)
+    $grp = [ADSI]"LDAP://$GroupDN"
+    # .psbase. umgeht PowerShells ADSI-Eigenschaftsadapter, der .Properties
+    # abfangen und dadurch unauffindbar machen kann ("Cannot index into a
+    # null array").
+    $memberProp = $grp.psbase.Properties['member']
+    $memberDns = if ($memberProp -and $memberProp.Count -gt 0) { @($memberProp.Value) } else { @() }
+    $names = @()
+    foreach ($dn in $memberDns) {
+        try {
+            $memberEntry = [ADSI]"LDAP://$dn"
+            $sam = $memberEntry.psbase.Properties['sAMAccountName'].Value
+            if ($sam) { $names += [string]$sam }
+        } catch {
+            Write-Log -Level WARN -Message "Mitglied '$dn' der Gruppe Event Log Readers konnte nicht aufgeloest werden (uebersprungen bei der Pruefung): $($_.Exception.Message)"
+        }
+    }
+    return $names
 }
 
-function Remove-EventLogReadersMemberViaLdap {
-    param([string]$BareUser)
-    $dn = Resolve-AdAccountDN -SamAccountName $BareUser
-    $grp = [ADSI]"LDAP://CN=Event Log Readers,CN=Builtin,$script:DomainDN"
-    $grp.Remove("LDAP://$dn")
-    $grp.psbase.CommitChanges()
+function Get-EventLogReadersMembers {
+    $identity = $script:EventLogReadersIdentity
+    if ($script:IsDomainController -and $identity.DN) {
+        if ($script:AdModuleAvailable) {
+            try {
+                $members = @(Get-ADGroupMember -Identity $identity.DN -ErrorAction Stop)
+                return @($members | ForEach-Object { $_.SamAccountName })
+            } catch {
+                throw "Gruppenmitglieder von '$($identity.Name)' (AD-Modul, DN $($identity.DN)) konnten nicht gelesen werden: $($_.Exception.Message)"
+            }
+        }
+        try {
+            return Get-EventLogReadersMembersViaLdap -GroupDN $identity.DN
+        } catch {
+            throw "Gruppenmitglieder von '$($identity.Name)' (LDAP-Fallback, DN $($identity.DN)) konnten nicht gelesen werden: $($_.Exception.Message)"
+        }
+    }
+    try {
+        $grp = [ADSI]"WinNT://$script:LocalGroupHost/$($identity.Name),group"
+        $names = @()
+        foreach ($m in $grp.Invoke('Members')) {
+            $names += $m.GetType().InvokeMember('Name', 'GetProperty', $null, $m, $null)
+        }
+        return $names
+    } catch {
+        throw "Gruppenmitglieder von '$($identity.Name)' konnten nicht gelesen werden (WinNT://$script:LocalGroupHost/...): $($_.Exception.Message)"
+    }
 }
 
 function Add-EventLogReadersMember {
     param([string]$Account)
-    if ($script:IsDomainController -and $script:DomainDN) {
+    $identity = $script:EventLogReadersIdentity
+    $bareUser = Get-BareUserName -Account $Account
+    if ($script:IsDomainController -and $identity.DN) {
+        if ($script:AdModuleAvailable) {
+            try {
+                Add-ADGroupMember -Identity $identity.DN -Members $bareUser -ErrorAction Stop
+                return
+            } catch {
+                throw "Hinzufuegen von '$Account' zu '$($identity.Name)' (AD-Modul) fehlgeschlagen: $($_.Exception.Message)"
+            }
+        }
         try {
-            Add-EventLogReadersMemberViaLdap -BareUser (Get-BareUserName -Account $Account)
+            $dn = Resolve-AdAccountDN -SamAccountName $bareUser
+            $grp = [ADSI]"LDAP://$($identity.DN)"
+            $grp.Add("LDAP://$dn")
+            $grp.psbase.CommitChanges()
             return
         } catch {
-            throw "Hinzufuegen von '$Account' zur Builtin-Gruppe 'Event Log Readers' (LDAP) fehlgeschlagen: $($_.Exception.Message)"
+            throw "Hinzufuegen von '$Account' zu '$($identity.Name)' (LDAP-Fallback) fehlgeschlagen: $($_.Exception.Message)"
         }
     }
-    # "Event Log Readers" ist der feste, nicht lokalisierte interne Gruppenname
-    # (siehe PDF S.4: "Gruppenname: Event Log Readers (built-in)") - gilt fuer
-    # net.exe nur auf einem Nicht-DC (dort echte lokale SAM-Gruppe).
-    $result = & net localgroup "Event Log Readers" "$Account" /add 2>&1
+    $result = & net localgroup "$($identity.Name)" "$Account" /add 2>&1
     if ($LASTEXITCODE -ne 0) { throw "net localgroup /add fehlgeschlagen (Exit $LASTEXITCODE): $result" }
 }
 
 function Remove-EventLogReadersMember {
     param([string]$Account)
-    if ($script:IsDomainController -and $script:DomainDN) {
+    $identity = $script:EventLogReadersIdentity
+    $bareUser = Get-BareUserName -Account $Account
+    if ($script:IsDomainController -and $identity.DN) {
+        if ($script:AdModuleAvailable) {
+            try {
+                Remove-ADGroupMember -Identity $identity.DN -Members $bareUser -Confirm:$false -ErrorAction Stop
+                return
+            } catch {
+                throw "Entfernen von '$Account' aus '$($identity.Name)' (AD-Modul) fehlgeschlagen: $($_.Exception.Message)"
+            }
+        }
         try {
-            Remove-EventLogReadersMemberViaLdap -BareUser (Get-BareUserName -Account $Account)
+            $dn = Resolve-AdAccountDN -SamAccountName $bareUser
+            $grp = [ADSI]"LDAP://$($identity.DN)"
+            $grp.Remove("LDAP://$dn")
+            $grp.psbase.CommitChanges()
             return
         } catch {
-            throw "Entfernen von '$Account' aus der Builtin-Gruppe 'Event Log Readers' (LDAP) fehlgeschlagen: $($_.Exception.Message)"
+            throw "Entfernen von '$Account' aus '$($identity.Name)' (LDAP-Fallback) fehlgeschlagen: $($_.Exception.Message)"
         }
     }
-    $result = & net localgroup "Event Log Readers" "$Account" /delete 2>&1
+    $result = & net localgroup "$($identity.Name)" "$Account" /delete 2>&1
     if ($LASTEXITCODE -ne 0) { throw "net localgroup /delete fehlgeschlagen (Exit $LASTEXITCODE): $result" }
 }
 #endregion
@@ -629,11 +664,20 @@ function New-CaroSettingDefinitions {
     if ($Scope.EventLogReaders -and $ServiceAccount) {
         $svcAccountCopy = $ServiceAccount
         $bareUser = Get-BareUserName -Account $svcAccountCopy
+        $groupName = $script:EventLogReadersIdentity.Name
+        $groupDn = $script:EventLogReadersIdentity.DN
+        $cmdTemplate = if ($script:IsDomainController -and $groupDn -and $script:AdModuleAvailable) {
+            "Add-ADGroupMember -Identity ""$groupDn"" -Members ""$bareUser""   (Ziel: Mitglied={0})"
+        } elseif ($script:IsDomainController -and $groupDn) {
+            "[ADSI] LDAP://$groupDn -> Add(""$bareUser"")   (Ziel: Mitglied={0})"
+        } else {
+            "net localgroup ""$groupName"" ""$svcAccountCopy"" /add   (Ziel: Mitglied={0})"
+        }
         $defs += @{
             Id              = 'EventLogReaders'
-            Title           = 'Servicekonto zur Gruppe "Event Log Readers" hinzufuegen'
-            Description     = "Das CARO-Servicekonto '$svcAccountCopy' muss lokal Mitglied der Gruppe 'Event Log Readers' sein, damit es das Security-Eventlog auslesen darf (nur noetig, falls das Konto nicht bereits administrative oder Nur-Lese-Rechte besitzt). PDF S.4."
-            CommandTemplate = "net localgroup ""Event Log Readers"" ""$svcAccountCopy"" /add   (Ziel: Mitglied={0})"
+            Title           = "Servicekonto zur Gruppe ""$groupName"" (Event Log Readers) hinzufuegen"
+            Description     = "Das CARO-Servicekonto '$svcAccountCopy' muss lokal Mitglied der Gruppe '$groupName' (BUILTIN\Event Log Readers, SID $script:EventLogReadersSid) sein, damit es das Security-Eventlog auslesen darf (nur noetig, falls das Konto nicht bereits administrative oder Nur-Lese-Rechte besitzt). PDF S.4."
+            CommandTemplate = $cmdTemplate
             Account         = $svcAccountCopy
             BareUser        = $bareUser
             Get             = { param($Def) [bool](Get-EventLogReadersMembers | Where-Object { $_ -ieq $Def.BareUser }) }
@@ -781,15 +825,11 @@ try {
         Write-Log -Level WARN -Message "DomainRole=$domainRole - kein (RO-)Domaenencontroller erkannt."
     } else {
         # Auf einem DC gibt es keine eigene lokale SAM-Datenbank - "lokale"
-        # Gruppen wie Event Log Readers liegen im Builtin-Container der
-        # Domaene. Get-EventLogReadersMembers liest sie deshalb per LDAP
-        # (kein NetBIOS noetig - $script:LocalGroupHost wird dann nicht
-        # mehr fuer das Lesen benutzt, nur noch als Fallback-Info).
-        # net.exe (Add-/Remove-EventLogReadersMember) leitet lokale
-        # Gruppenoperationen auf einem DC intern bereits korrekt um und
-        # braucht diese Unterscheidung nicht.
+        # Gruppen wie Event Log Readers liegen als Builtin-Gruppe direkt in
+        # Active Directory. Details zur Verwaltung (AD-Modul vs. LDAP) folgen
+        # weiter unten, nachdem Domain-DN und Modulverfuegbarkeit bekannt sind.
         $script:IsDomainController = $true
-        Write-Log -Level INFO -Message "Domaenencontroller erkannt - Gruppenmitgliedschaft von 'Event Log Readers' wird per LDAP aus dem Builtin-Container gelesen (NetBIOS-unabhaengig)."
+        Write-Log -Level INFO -Message "Domaenencontroller erkannt."
     }
 } catch {
     Write-Log -Level WARN -Message "Betriebssystem-/Rolleninformation konnte nicht ermittelt werden: $($_.Exception.Message)"
@@ -807,6 +847,24 @@ try {
     $script:DomainDN = $null
     Write-Log -Level ERROR -Message "Domain-DN konnte nicht ermittelt werden: $($_.Exception.Message)"
 }
+
+$script:AdModuleAvailable = $false
+if ($script:IsDomainController) {
+    if (Get-Module -ListAvailable -Name ActiveDirectory -ErrorAction SilentlyContinue) {
+        try {
+            Import-Module ActiveDirectory -ErrorAction Stop
+            $script:AdModuleAvailable = $true
+            Write-Log -Level INFO -Message "ActiveDirectory-PowerShell-Modul gefunden und geladen - wird fuer 'Event Log Readers' bevorzugt verwendet (robuster als ADSI/net.exe)."
+        } catch {
+            Write-Log -Level WARN -Message "ActiveDirectory-Modul gefunden, konnte aber nicht geladen werden - falle auf LDAP/ADSI zurueck: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Log -Level INFO -Message "ActiveDirectory-PowerShell-Modul nicht gefunden - 'Event Log Readers' wird ueber LDAP/ADSI verwaltet (weniger robust, siehe README)."
+    }
+}
+
+$script:EventLogReadersIdentity = Get-EventLogReadersGroupIdentity
+Write-Log -Level INFO -Message "Event Log Readers aufgeloest: Name='$($script:EventLogReadersIdentity.Name)' DN='$($script:EventLogReadersIdentity.DN)' (per Well-Known-SID $script:EventLogReadersSid, sprachunabhaengig)."
 
 foreach ($key in @($script:AuditSubcategoryMap.Keys)) {
     $entry = $script:AuditSubcategoryMap[$key]
