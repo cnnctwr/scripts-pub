@@ -27,7 +27,14 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 
 ## Was konfiguriert wird
 
-1. **Event Log Readers** — Servicekonto zur lokalen Gruppe hinzufügen
+1. **Event Log Readers** — Servicekonto zur Gruppe hinzufügen. Die Gruppe
+   wird über ihre weltweit gleiche Well-Known-SID `S-1-5-32-573` identifiziert,
+   nie über einen angenommenen Namen — auf lokalisierten Windows-Versionen
+   können sowohl CN als auch SamAccountName dieser Builtin-Gruppe übersetzt
+   sein (bestätigt z. B. deutsch: „Ereignisprotokollleser“ statt
+   „Event Log Readers“). Auf einem Domänencontroller wird bevorzugt das
+   ActiveDirectory-PowerShell-Modul verwendet, falls vorhanden (siehe
+   Voraussetzungen), sonst ein LDAP/ADSI-Fallback.
 2. **Unterkategorien erzwingen** — Sicherheitsoption
    `SCENoApplyLegacyAuditPolicy` (muss laut PDF zuerst gesetzt werden)
 3. **9 Audit-Unterkategorien** via `auditpol` (sprachunabhängig per GUID
@@ -52,7 +59,12 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 - PowerShell **5.1** (kein `pwsh`/PS7 nötig)
 - Ausführung als **Administrator** (Domänen-Admin empfohlen, wegen
   `SeSecurityPrivilege` für die SACL-Änderung)
-- Kein GroupPolicy-/RSAT-Modul erforderlich
+- Kein GroupPolicy-Modul erforderlich. Das **ActiveDirectory-PowerShell-Modul**
+  (RSAT-AD-PowerShell) ist **optional, aber empfohlen** auf einem DC: Ist es
+  vorhanden, wird `Event Log Readers` darüber verwaltet (`Get-/Add-/Remove-ADGroupMember`,
+  robust, offiziell unterstützt). Ohne das Modul greift ein LDAP/ADSI-Eigenbau,
+  der in der Praxis fragiler war (siehe „Bekannte Einschränkungen“) — auf
+  einem DC ohne das Modul lohnt sich `Install-WindowsFeature RSAT-AD-PowerShell`.
 
 ## Verwendung
 
@@ -193,13 +205,29 @@ hier als reine Ist-Zustands-Momentaufnahme.
 
 ## Rollback
 
-Ein Rollback-Lauf mit `-RestoreFrom <Backup-Datei>` liest die Backup-JSON,
-geht jeden als `Geändert` protokollierten Eintrag einzeln durch und bietet an,
-ihn — wieder mit derselben Klartext-Bestätigung — auf den ursprünglich
-protokollierten Wert zurückzusetzen. Einträge mit anderem Status
-(`Bereits korrekt`, `Übersprungen`) werden übersprungen, da dort nichts
-geändert wurde. Der Rollback-Lauf erzeugt selbst wieder ein eigenes Log und
-eine eigene Backup-Datei.
+Ein Rollback-Lauf mit `-RestoreFrom <Backup-Datei>` liest die Backup-JSON und
+bietet für jeden Eintrag, für den ein echter Originalwert vorliegt, an, ihn
+— wieder mit derselben Klartext-Bestätigung — auf diesen Wert
+zurückzusetzen. Das betrifft zwei Status-Fälle:
+
+- **`Geändert`** — der Normalfall: die Einstellung wurde erfolgreich
+  angewendet und wird auf den protokollierten Originalwert zurückgesetzt.
+- **`Fehler: ...` mit vorhandenem Originalwert** — das Lesen des Ist-Zustands
+  war erfolgreich, nur das anschließende *Setzen* ist gescheitert. Da der
+  echte Originalwert trotzdem im Backup steht, wird auch dieser Eintrag zur
+  Wiederherstellung angeboten (relevant z. B., wenn eine Einstellung in
+  einem *späteren* Lauf doch noch erfolgreich geändert wurde und jetzt wieder
+  zurückgesetzt werden soll).
+
+Alle anderen Fälle werden übersprungen, weil dort nichts geändert wurde oder
+kein verwertbarer Wert vorliegt:
+
+- `Bereits korrekt`, `Übersprungen` — nichts wurde verändert.
+- `Fehler beim Lesen` (ohne Doppelpunkt) — schon das Lesen ist gescheitert,
+  es gibt keinen echten Wert, auf den zurückgesetzt werden könnte.
+
+Der Rollback-Lauf erzeugt selbst wieder ein eigenes Log und eine eigene
+Backup-Datei.
 
 ## Bekannte Einschränkungen
 
@@ -212,6 +240,10 @@ eine eigene Backup-Datei.
   Unterkategorie zu setzen.
 - Vor dem produktiven Einsatz sollte das Script in einer Test-/Lab-Umgebung
   gegengeprüft werden.
+- Für `Event Log Readers` auf einem DC **ohne** ActiveDirectory-PowerShell-Modul
+  greift ein LDAP/ADSI-Eigenbau, der sich in der Praxis als weniger robust
+  erwiesen hat als die Modul-Cmdlets. Empfehlung: `RSAT-AD-PowerShell` auf dem
+  DC installieren, dann wird dieser Pfad automatisch bevorzugt.
 
 ## Lizenz / Haftung
 

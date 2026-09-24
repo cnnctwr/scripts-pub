@@ -976,7 +976,15 @@ if ($ReportOnly) {
             Write-Log -Level WARN -Message "[$($entry.Id)] Keine passende Definition im aktuellen Script gefunden - Rollback uebersprungen."
             continue
         }
-        if ($entry.Status -ne 'Geaendert') {
+        # Auch Eintraege mit einem Setzen-Fehler ("Fehler: ...") sind
+        # restaurierbar, WENN dabei ein echter Originalwert gelesen wurde
+        # (das Lesen war erfolgreich, nur das anschliessende Setzen nicht -
+        # der urspruengliche Wert steht trotzdem korrekt im Backup). Ein
+        # reiner Lesefehler ("Fehler beim Lesen", ohne Doppelpunkt) hat
+        # dagegen keinen echten Wert und bleibt bewusst ausgeschlossen.
+        $isRestorable = ($entry.Status -eq 'Geaendert') -or
+                        ($entry.Status -like 'Fehler:*' -and $null -ne $entry.OriginalValueRaw)
+        if (-not $isRestorable) {
             Write-Log -Level INFO -Message "[$($entry.Id)] Status war '$($entry.Status)' - kein Rollback noetig."
             continue
         }
