@@ -67,11 +67,14 @@
         }
 
 .PARAMETER ReportOnly
-    Reiner Lesepass: fragt nichts ab, aendert nichts, liest nur den aktuellen
-    Wert jeder Einstellung und schreibt ihn (zusammen mit dem Soll-Wert und ob
-    er uebereinstimmt) in die Backup-Datei (Status 'Nur gelesen (Report)').
-    Eignet sich als Bestandsaufnahme vor dem ersten Eingriff oder als
-    Ausgangspunkt fuer eine eigene -DesiredSettingsFile. Nicht gleichzeitig
+    Reiner Lesepass: aendert nichts, liest nur den aktuellen Wert jeder
+    Einstellung und schreibt ihn (zusammen mit dem Soll-Wert und ob er
+    uebereinstimmt) in die Backup-Datei (Status 'Nur gelesen (Report)'). Wie
+    im Anwenden-Modus wird bei fehlendem -ServiceAccount interaktiv danach
+    gefragt (Enter = Schritt auslassen), damit die Datei als vollstaendige
+    Rollback-Referenz nutzbar ist. Eignet sich als Bestandsaufnahme vor dem
+    ersten Eingriff oder als Ausgangspunkt fuer eine eigene
+    -DesiredSettingsFile. Nicht gleichzeitig
     mit -RestoreFrom verwendbar.
 
 .PARAMETER AutoApprove
@@ -934,6 +937,11 @@ if ($DesiredSettingsFile) {
 
 if ($ReportOnly) {
     #region -------------------------------------------------- Report-Modus ---
+    if (-not $ServiceAccount) {
+        $answer = Read-Host "Domain\Benutzername des CARO-Servicekontos fuer die Gruppe 'Event Log Readers' (Enter = Schritt auslassen - Report/Backup dann ohne diesen Punkt)"
+        if ($answer) { $ServiceAccount = $answer }
+    }
+
     $defs = New-CaroSettingDefinitions -ServiceAccount $ServiceAccount -MaxLogSizeKB $MaxLogSizeKB -Scope $script:Scope
     Write-Log -Level INFO -Message "Report-Modus: $($defs.Count) Einstellungen werden nur gelesen, nichts wird geaendert."
 
@@ -976,16 +984,16 @@ if ($ReportOnly) {
             Write-Log -Level WARN -Message "[$($entry.Id)] Keine passende Definition im aktuellen Script gefunden - Rollback uebersprungen."
             continue
         }
-        # Auch Eintraege mit einem Setzen-Fehler ("Fehler: ...") sind
-        # restaurierbar, WENN dabei ein echter Originalwert gelesen wurde
-        # (das Lesen war erfolgreich, nur das anschliessende Setzen nicht -
-        # der urspruengliche Wert steht trotzdem korrekt im Backup). Ein
-        # reiner Lesefehler ("Fehler beim Lesen", ohne Doppelpunkt) hat
-        # dagegen keinen echten Wert und bleibt bewusst ausgeschlossen.
-        $isRestorable = ($entry.Status -eq 'Geaendert') -or
-                        ($entry.Status -like 'Fehler:*' -and $null -ne $entry.OriginalValueRaw)
-        if (-not $isRestorable) {
-            Write-Log -Level INFO -Message "[$($entry.Id)] Status war '$($entry.Status)' - kein Rollback noetig."
+        # Restaurierbar ist jeder Eintrag, fuer den ueberhaupt ein gueltiger
+        # Originalwert gelesen wurde - unabhaengig vom Status. Das gilt
+        # gleichermassen fuer 'Geaendert', 'Bereits korrekt', 'Uebersprungen',
+        # 'Nur gelesen (Report) - ...' und 'Fehler: ...' (Setzen-Fehler, aber
+        # erfolgreiches Lesen). Damit ist JEDE Backup-Datei - auch aus einem
+        # reinen -ReportOnly-Lauf - vollwertig fuer -RestoreFrom nutzbar.
+        # Einzige Ausnahme: 'Fehler beim Lesen' (ohne Doppelpunkt) hat keinen
+        # echten Wert, dort ist OriginalValueRaw $null und bleibt ausgeschlossen.
+        if ($null -eq $entry.OriginalValueRaw) {
+            Write-Log -Level INFO -Message "[$($entry.Id)] Kein gueltiger Originalwert vorhanden (Status '$($entry.Status)') - Rollback fuer diesen Eintrag nicht moeglich."
             continue
         }
         $result = Invoke-CaroSetting -Def $def -TargetValue $entry.OriginalValueRaw -Mode 'Restore'

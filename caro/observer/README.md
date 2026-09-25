@@ -95,32 +95,27 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
    `EventLogReaders` komplett im Report, da er ohne bekanntes Konto gar nicht
    erst geprüft werden kann; alle anderen Einstellungen sind davon unabhängig.
    Die dabei erzeugte `CARO-Backup_*.json` dokumentiert den **Ist-Zustand vor
-   jeder Änderung** - rein informativ. **Wichtig:** Diese Report-Only-Datei
-   eignet sich NICHT für `-RestoreFrom` - im Report-Modus wird nichts als
-   `Geändert` markiert (nur `Nur gelesen (Report) - ...`), und `-RestoreFrom`
-   wirkt ausschließlich auf `Geändert`-Einträge. Sie dient ausschließlich der
-   Dokumentation/Verifikation, nicht dem Rollback.
+   jeder Änderung** und ist **vollwertig für `-RestoreFrom` nutzbar** — jede
+   Backup-Datei, egal aus welchem Modus, enthält für jede Einstellung einen
+   echten, in diesem Moment gelesenen Ist-Wert (siehe Abschnitt „Rollback").
 
-2. **Erster echter Lauf, mit demselben Servicekonto:**
+2. **Diese Backup-Datei sofort sichern**: an einen sicheren, klar benannten
+   Ort kopieren (z. B. außerhalb des `CARO-Setup-Logs`-Ordners), bevor
+   weitere Läufe stattfinden. Es ist die einzige Quelle für den echten
+   Urzustand des Servers — jeder spätere Lauf sieht als „aktuell" bereits das
+   Ergebnis vorheriger Läufe, nicht mehr den ursprünglichen Zustand. Geht
+   diese eine Datei verloren, lässt sich der Urzustand nicht mehr
+   automatisiert wiederherstellen.
+
+3. **Erster echter Lauf, mit demselben Servicekonto:**
    ```powershell
    .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
    ```
-   Jede Einstellung einzeln bestätigen wie gewohnt. Die dabei entstehende
-   `CARO-Backup_*.json` ist die für ein **echtes Rollback nutzbare** Datei -
-   sie enthält für jede tatsächlich geänderte Einstellung sowohl den
-   ursprünglichen als auch den neuen Wert.
+   Jede Einstellung einzeln bestätigen wie gewohnt.
 
-3. **Diese Backup-Datei sichern**, sofort nach dem ersten Lauf: an einen
-   sicheren, klar benannten Ort kopieren (z. B. außerhalb des
-   `CARO-Setup-Logs`-Ordners), bevor weitere Läufe stattfinden. Es ist die
-   einzige Quelle für den echten Urzustand des Servers - jeder spätere Lauf
-   sieht als „aktuell" bereits das Ergebnis dieses ersten Laufs, nicht mehr
-   den ursprünglichen Zustand. Geht diese eine Datei verloren, lässt sich der
-   Urzustand nicht mehr automatisiert wiederherstellen.
-
-4. **Rollback bei Bedarf:**
+4. **Rollback bei Bedarf**, mit der in Schritt 2 gesicherten Datei:
    ```powershell
-   .\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 2>"
+   .\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 1>"
    ```
    Empfehlenswert: danach einmal mit `-ReportOnly` gegenprüfen, dass wieder
    alles dem Urzustand entspricht, bevor erneut angewendet wird.
@@ -134,7 +129,7 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 | `-RestoreFrom`           | string  | *(nicht gesetzt)*         | Pfad zu einer zuvor erzeugten `CARO-Backup-*.json`. Aktiviert den Rollback-Modus. Nicht kombinierbar mit `-ReportOnly`. |
 | `-MaxLogSizeKB`          | int     | `131072` (128 MB)         | Gewünschte Mindest-Maximalgröße des Security-Eventlogs in KB. Überschreibt einen Wert aus `-DesiredSettingsFile`. |
 | `-DesiredSettingsFile`   | string  | *(nicht gesetzt)*         | Pfad zu einer JSON-Eingabedatei mit `ServiceAccount`, `MaxLogSizeKB` und/oder `Scope` (siehe unten). Ein explizit auf der Kommandozeile gesetzter Parameter hat immer Vorrang vor dem Wert aus der Datei. |
-| `-ReportOnly`            | switch  | `false`                    | Reiner Lesepass: fragt nichts ab, ändert nichts, schreibt Ist-Wert + Soll-Wert + Übereinstimmung jeder Einstellung in die Backup-Datei (Status `Nur gelesen (Report)`). Nicht kombinierbar mit `-RestoreFrom`. |
+| `-ReportOnly`            | switch  | `false`                    | Reiner Lesepass: ändert nichts, schreibt Ist-Wert + Soll-Wert + Übereinstimmung jeder Einstellung in die Backup-Datei (Status `Nur gelesen (Report)`). Fragt wie der Apply-Modus bei fehlendem `-ServiceAccount` interaktiv danach (Enter = Schritt auslassen). Nicht kombinierbar mit `-RestoreFrom`. |
 | `-AutoApprove`           | switch  | `false`                    | Überspringt die Einzelbestätigung (weiterhin vollständig protokolliert). Nicht für den ersten Lauf empfohlen. |
 
 ### `-DesiredSettingsFile` — Eingabe-JSON
@@ -184,9 +179,11 @@ Praktisch als Ausgangspunkt: einmal `-ReportOnly` laufen lassen, um den
 Ist-Zustand zu dokumentieren, bevor irgendetwas angefasst wird — die dabei
 erzeugte `CARO-Backup-*.json` enthält für jede Einstellung Ist- und (unveränderten)
 Neu-Wert sowie den Status `Nur gelesen (Report) - entspricht Ziel` bzw.
-`- weicht vom Ziel ab`. Ein späterer `-RestoreFrom` auf diese Datei macht
-nichts (es gibt nichts zurückzusetzen), da nur Einträge mit Status `Geändert`
-für den Rollback berücksichtigt werden.
+`- weicht vom Ziel ab`. Ein späterer `-RestoreFrom` auf diese Datei setzt jede
+Einstellung auf genau diesen dokumentierten Ist-Zustand zurück — eine
+Report-Only-Datei ist also, unabhängig davon, ob das Script vorher schon
+einmal gelaufen ist, sofort als vollständige Rollback-Referenz nutzbar
+(siehe Abschnitt „Rollback").
 
 ## Erzeugte Dateien
 
@@ -200,31 +197,30 @@ Script), benannt mit Servername und Zeitstempel:
 | `CARO-Backup_<Server>_<Zeitstempel>.json`       | Je Einstellung: Original- und neuer Wert, Befehl, Zeitstempel, Status (`Geändert`, `Bereits korrekt`, `Übersprungen`, `Nur gelesen (Report) …`, `Fehler …`). Grundlage für `-RestoreFrom`. |
 
 Bei `-ReportOnly` werden dieselben zwei Dateien geschrieben (kein Log-Eintrag
-mit Status `Geändert`, da nichts angewendet wird) — die Backup-Datei dient
-hier als reine Ist-Zustands-Momentaufnahme.
+mit Status `Geändert`, da nichts angewendet wird) — die Backup-Datei ist
+trotzdem eine vollständige, für `-RestoreFrom` nutzbare Ist-Zustands-Momentaufnahme
+(siehe „Rollback").
 
 ## Rollback
 
 Ein Rollback-Lauf mit `-RestoreFrom <Backup-Datei>` liest die Backup-JSON und
-bietet für jeden Eintrag, für den ein echter Originalwert vorliegt, an, ihn
-— wieder mit derselben Klartext-Bestätigung — auf diesen Wert
-zurückzusetzen. Das betrifft zwei Status-Fälle:
+bietet für **jeden Eintrag, für den ein echter Originalwert vorliegt**, an,
+ihn — wieder mit derselben Klartext-Bestätigung — auf diesen Wert
+zurückzusetzen. Das ist unabhängig vom Status: `Geändert`, `Bereits korrekt`,
+`Übersprungen`, `Nur gelesen (Report) - ...` und `Fehler: ...` (Setzen
+fehlgeschlagen, aber Lesen erfolgreich) enthalten alle einen gültigen
+`OriginalValueRaw`-Wert und werden gleichermaßen restauriert. Für `Bereits
+korrekt`/bereits konforme Einträge ist das ein No-op (Ist- und Sollwert sind
+identisch), richtet also nichts an.
 
-- **`Geändert`** — der Normalfall: die Einstellung wurde erfolgreich
-  angewendet und wird auf den protokollierten Originalwert zurückgesetzt.
-- **`Fehler: ...` mit vorhandenem Originalwert** — das Lesen des Ist-Zustands
-  war erfolgreich, nur das anschließende *Setzen* ist gescheitert. Da der
-  echte Originalwert trotzdem im Backup steht, wird auch dieser Eintrag zur
-  Wiederherstellung angeboten (relevant z. B., wenn eine Einstellung in
-  einem *späteren* Lauf doch noch erfolgreich geändert wurde und jetzt wieder
-  zurückgesetzt werden soll).
+**Jede** Backup-Datei — auch aus einem reinen `-ReportOnly`-Lauf, auch wenn
+das Script vorher noch nie etwas geändert hat — ist damit vollwertig für
+`-RestoreFrom` nutzbar.
 
-Alle anderen Fälle werden übersprungen, weil dort nichts geändert wurde oder
-kein verwertbarer Wert vorliegt:
-
-- `Bereits korrekt`, `Übersprungen` — nichts wurde verändert.
-- `Fehler beim Lesen` (ohne Doppelpunkt) — schon das Lesen ist gescheitert,
-  es gibt keinen echten Wert, auf den zurückgesetzt werden könnte.
+Einzige Ausnahme: **`Fehler beim Lesen`** (ohne Doppelpunkt) — hier ist schon
+das Lesen des Ist-Zustands gescheitert, es gibt also keinen echten Wert, auf
+den zurückgesetzt werden könnte. Dieser eine Eintrag wird beim Rollback
+übersprungen.
 
 Der Rollback-Lauf erzeugt selbst wieder ein eigenes Log und eine eigene
 Backup-Datei.
