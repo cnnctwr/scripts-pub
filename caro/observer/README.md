@@ -13,7 +13,7 @@ wird. Bei mehreren Domänencontrollern muss es auf jedem einzeln laufen — mit
 Ausnahme der SACL-Einstellung, die nur auf **einem** DC gesetzt werden muss, da sie
 per AD-Replikation automatisch verteilt wird.
 
-## Warum dieses Script
+## Wie das Script arbeitet
 
 Jede einzelne Änderung wird vor der Ausführung im Klartext angezeigt:
 
@@ -87,38 +87,70 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 
 ## Best Practice: Empfohlener Ablauf beim ersten Einsatz auf einem Server
 
-1. **Bestandsaufnahme, bevor irgendetwas angefasst wird:**
-   ```powershell
-   .\Set-CAROObserverPrerequisites.ps1 -ReportOnly -ServiceAccount "CUSATUM\sa-caro"
-   ```
-   Das Servicekonto hier mit angeben — ohne `-ServiceAccount` fehlt der Schritt
-   `EventLogReaders` komplett im Report, da er ohne bekanntes Konto gar nicht
-   erst geprüft werden kann; alle anderen Einstellungen sind davon unabhängig.
-   Die dabei erzeugte `CARO-Backup_*.json` dokumentiert den **Ist-Zustand vor
-   jeder Änderung** und ist **vollwertig für `-RestoreFrom` nutzbar** — jede
-   Backup-Datei, egal aus welchem Modus, enthält für jede Einstellung einen
-   echten, in diesem Moment gelesenen Ist-Wert (siehe Abschnitt „Rollback").
+### 1. Bestandsaufnahme, bevor irgendetwas angefasst wird
 
-2. **Diese Backup-Datei sofort sichern**: an einen sicheren, klar benannten
-   Ort kopieren (z. B. außerhalb des `CARO-Setup-Logs`-Ordners), bevor
-   weitere Läufe stattfinden. Es ist die einzige Quelle für den echten
-   Urzustand des Servers — jeder spätere Lauf sieht als „aktuell" bereits das
-   Ergebnis vorheriger Läufe, nicht mehr den ursprünglichen Zustand. Geht
-   diese eine Datei verloren, lässt sich der Urzustand nicht mehr
-   automatisiert wiederherstellen.
+```powershell
+.\Set-CAROObserverPrerequisites.ps1 -ReportOnly -ServiceAccount "CUSATUM\sa-caro"
+```
 
-3. **Erster echter Lauf, mit demselben Servicekonto:**
-   ```powershell
-   .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
-   ```
-   Jede Einstellung einzeln bestätigen wie gewohnt.
+Das Servicekonto hier mit angeben — ohne `-ServiceAccount` fehlt der Schritt
+`EventLogReaders` komplett im Report (wird sonst interaktiv nachgefragt);
+alle anderen Einstellungen sind davon unabhängig.
 
-4. **Rollback bei Bedarf**, mit der in Schritt 2 gesicherten Datei:
-   ```powershell
-   .\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 1>"
-   ```
-   Empfehlenswert: danach einmal mit `-ReportOnly` gegenprüfen, dass wieder
-   alles dem Urzustand entspricht, bevor erneut angewendet wird.
+Erzeugt werden drei Dateien, benannt nach Server und Zeitstempel, z. B.:
+
+- `CARO-Setup_SRV-CARO_20260925-101500.log` — Textprotokoll: jeder geprüfte
+  Schritt, alle Fehler und Warnungen.
+- `CARO-DesiredSettings_SRV-CARO_20260925-101500.json` — Vorschau aller
+  Einstellungen, die ein echter Lauf anfassen würde, mit Sollwert und Befehl —
+  geschrieben, *bevor* überhaupt etwas passiert (siehe Hinweis unten).
+- `CARO-Backup_SRV-CARO_20260925-101500.json` — der **Ist-Zustand** jeder
+  Einstellung zu diesem Zeitpunkt. Da `-ReportOnly` nichts verändert, sind
+  Original- und Neu-Wert hier identisch — trotzdem ist diese Datei bereits
+  **vollwertig für `-RestoreFrom` nutzbar** (siehe Abschnitt „Rollback").
+
+**Diese Backup-Datei sofort sichern**: an einen sicheren, klar benannten Ort
+kopieren (z. B. außerhalb des `CARO-Setup-Logs`-Ordners), bevor weitere Läufe
+stattfinden. Es ist die einzige Quelle für den echten Urzustand des Servers —
+jeder spätere Lauf sieht als „aktuell" bereits das Ergebnis vorheriger Läufe,
+nicht mehr den ursprünglichen Zustand. Geht diese eine Datei verloren, lässt
+sich der Urzustand nicht mehr automatisiert wiederherstellen.
+
+> **Zum Namen „DesiredSettings“:** Der Name klingt nach einer vom Anwender
+> vorab festgelegten Spezifikation, ist aber eine vom Script berechnete
+> Vorschau — kein Eingabeformat. Es gibt bewusst **keine** vollständige,
+> vorab von Hand editierbare „alle 16 Einstellungen“-Datei: Einige Angaben
+> (z. B. der tatsächliche, ggf. lokalisierte Name der `Event Log
+> Readers`-Gruppe, der Domain-DN, ob die Audit-Unterkategorien auf diesem
+> System valide Namen ergeben) lassen sich nicht ohne Kontakt zum Zielsystem
+> zuverlässig vorwegnehmen. Zusätzlich sind die eigentlichen Sollwerte
+> (`Erfolg`, SACL-Rechte usw.) PDF-fest vorgegeben und bewusst nicht
+> überschreibbar, um versehentliche Fehlkonfiguration zu verhindern — ein
+> volles Eingabeformat würde sie fälschlich als frei änderbar erscheinen
+> lassen. `-ReportOnly` deckt den Vorab-Einblick trotzdem vollständig ab.
+
+### 2. Erster echter Lauf, mit demselben Servicekonto
+
+```powershell
+.\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
+```
+
+Jede Einstellung einzeln bestätigen wie gewohnt. Erzeugt dieselben drei
+Dateitypen wie in Schritt 1 — diesmal mit echten Änderungen: Die
+`CARO-Backup_*.json` enthält für jede tatsächlich geänderte Einstellung
+Original- **und** neuen Wert (Status `Geändert`).
+
+### 3. Rollback bei Bedarf
+
+```powershell
+.\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 1 oder 2>"
+```
+
+Erzeugt wieder ein Log und eine eigene, neue Backup-Datei — **keine**
+`DesiredSettings`-Datei, da hier nichts „angestrebt", sondern etwas
+zurückgesetzt wird. Empfehlenswert: danach einmal mit `-ReportOnly`
+gegenprüfen, dass wieder alles dem gewünschten Zustand entspricht, bevor
+erneut angewendet wird.
 
 ## Parameter
 
