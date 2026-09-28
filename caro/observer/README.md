@@ -76,7 +76,7 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
 
 # Alle Änderungen rückgängig machen (mit erneuter Einzelbestätigung)
-.\Set-CAROObserverPrerequisites.ps1 -RestoreFrom ".\CARO-Setup-Logs\CARO-Backup_DC01_20260922-101500.json"
+.\Set-CAROObserverPrerequisites.ps1 -RestoreFrom ".\CARO-Observer-Setup-Logs\CARO-Observer-Backup_DC01_20260922-101500.json"
 
 # Nur lesen, nichts ändern (Bestandsaufnahme)
 .\Set-CAROObserverPrerequisites.ps1 -ReportOnly
@@ -99,18 +99,18 @@ alle anderen Einstellungen sind davon unabhängig.
 
 Erzeugt werden drei Dateien, benannt nach Server und Zeitstempel, z. B.:
 
-- `CARO-Setup_SRV-CARO_20260925-101500.log` — Textprotokoll: jeder geprüfte
+- `CARO-Observer-Setup_SRV-CARO_20260925-101500.log` — Textprotokoll: jeder geprüfte
   Schritt, alle Fehler und Warnungen.
-- `CARO-DesiredSettings_SRV-CARO_20260925-101500.json` — Vorschau aller
+- `CARO-Observer-DesiredSettings_SRV-CARO_20260925-101500.json` — Vorschau aller
   Einstellungen, die ein echter Lauf anfassen würde, mit Sollwert und Befehl —
   geschrieben, *bevor* überhaupt etwas passiert (siehe Hinweis unten).
-- `CARO-Backup_SRV-CARO_20260925-101500.json` — der **Ist-Zustand** jeder
+- `CARO-Observer-Backup_SRV-CARO_20260925-101500.json` — der **Ist-Zustand** jeder
   Einstellung zu diesem Zeitpunkt. Da `-ReportOnly` nichts verändert, sind
   Original- und Neu-Wert hier identisch — trotzdem ist diese Datei bereits
   **vollwertig für `-RestoreFrom` nutzbar** (siehe Abschnitt „Rollback").
 
 **Diese Backup-Datei sofort sichern**: an einen sicheren, klar benannten Ort
-kopieren (z. B. außerhalb des `CARO-Setup-Logs`-Ordners), bevor weitere Läufe
+kopieren (z. B. außerhalb des `CARO-Observer-Setup-Logs`-Ordners), bevor weitere Läufe
 stattfinden. Es ist die einzige Quelle für den echten Urzustand des Servers —
 jeder spätere Lauf sieht als „aktuell" bereits das Ergebnis vorheriger Läufe,
 nicht mehr den ursprünglichen Zustand. Geht diese eine Datei verloren, lässt
@@ -137,7 +137,7 @@ sich der Urzustand nicht mehr automatisiert wiederherstellen.
 
 Jede Einstellung einzeln bestätigen wie gewohnt. Erzeugt dieselben drei
 Dateitypen wie in Schritt 1 — diesmal mit echten Änderungen: Die
-`CARO-Backup_*.json` enthält für jede tatsächlich geänderte Einstellung
+`CARO-Observer-Backup_*.json` enthält für jede tatsächlich geänderte Einstellung
 Original- **und** neuen Wert (Status `Geändert`).
 
 ### 3. Rollback bei Bedarf
@@ -157,8 +157,8 @@ erneut angewendet wird.
 | Parameter               | Typ     | Default                  | Beschreibung                                                                                                   |
 |--------------------------|---------|----------------------------|---------------------------------------------------------------------------------------------------------------|
 | `-ServiceAccount`        | string  | *(interaktive Abfrage)*   | `Domain\Benutzername` des CARO-Servicekontos für die Gruppe `Event Log Readers`. Leere Eingabe überspringt den Schritt. Überschreibt einen Wert aus `-DesiredSettingsFile`. |
-| `-OutputPath`            | string  | `.\CARO-Setup-Logs`       | Verzeichnis für Log-, Backup- und Zieleinstellungsdateien.                                                     |
-| `-RestoreFrom`           | string  | *(nicht gesetzt)*         | Pfad zu einer zuvor erzeugten `CARO-Backup-*.json`. Aktiviert den Rollback-Modus. Nicht kombinierbar mit `-ReportOnly`. |
+| `-OutputPath`            | string  | `.\CARO-Observer-Setup-Logs`       | Verzeichnis für Log-, Backup- und Zieleinstellungsdateien.                                                     |
+| `-RestoreFrom`           | string  | *(nicht gesetzt)*         | Pfad zu einer zuvor erzeugten `CARO-Observer-Backup-*.json`. Aktiviert den Rollback-Modus. Nicht kombinierbar mit `-ReportOnly`. |
 | `-MaxLogSizeKB`          | int     | `131072` (128 MB)         | Gewünschte Mindest-Maximalgröße des Security-Eventlogs in KB. Überschreibt einen Wert aus `-DesiredSettingsFile`. |
 | `-DesiredSettingsFile`   | string  | *(nicht gesetzt)*         | Pfad zu einer JSON-Eingabedatei mit `ServiceAccount`, `MaxLogSizeKB` und/oder `Scope` (siehe unten). Ein explizit auf der Kommandozeile gesetzter Parameter hat immer Vorrang vor dem Wert aus der Datei. |
 | `-ReportOnly`            | switch  | `false`                    | Reiner Lesepass: ändert nichts, schreibt Ist-Wert + Soll-Wert + Übereinstimmung jeder Einstellung in die Backup-Datei (Status `Nur gelesen (Report)`). Fragt wie der Apply-Modus bei fehlendem `-ServiceAccount` interaktiv danach (Enter = Schritt auslassen). Nicht kombinierbar mit `-RestoreFrom`. |
@@ -209,7 +209,7 @@ Host sind und die Firewall-Schritte deshalb übersprungen werden):
 
 Praktisch als Ausgangspunkt: einmal `-ReportOnly` laufen lassen, um den
 Ist-Zustand zu dokumentieren, bevor irgendetwas angefasst wird — die dabei
-erzeugte `CARO-Backup-*.json` enthält für jede Einstellung Ist- und (unveränderten)
+erzeugte `CARO-Observer-Backup-*.json` enthält für jede Einstellung Ist- und (unveränderten)
 Neu-Wert sowie den Status `Nur gelesen (Report) - entspricht Ziel` bzw.
 `- weicht vom Ziel ab`. Ein späterer `-RestoreFrom` auf diese Datei setzt jede
 Einstellung auf genau diesen dokumentierten Ist-Zustand zurück — eine
@@ -219,14 +219,14 @@ einmal gelaufen ist, sofort als vollständige Rollback-Referenz nutzbar
 
 ## Erzeugte Dateien
 
-Alle Dateien landen in `-OutputPath` (Standard: `CARO-Setup-Logs` neben dem
+Alle Dateien landen in `-OutputPath` (Standard: `CARO-Observer-Setup-Logs` neben dem
 Script), benannt mit Servername und Zeitstempel:
 
 | Datei                                         | Inhalt                                                                                          |
 |------------------------------------------------|---------------------------------------------------------------------------------------------------|
-| `CARO-Setup_<Server>_<Zeitstempel>.log`         | Vollständiges Textprotokoll: jeder Schritt, alle Fehler und Warnungen, mit Zeitstempel.           |
-| `CARO-DesiredSettings_<Server>_<Zeitstempel>.json` | Strukturierte Liste aller **Ziel**-Einstellungen (Titel, Beschreibung, Befehl, Zielwert) — unabhängig davon, ob sie angewendet wurden. |
-| `CARO-Backup_<Server>_<Zeitstempel>.json`       | Je Einstellung: Original- und neuer Wert, Befehl, Zeitstempel, Status (`Geändert`, `Bereits korrekt`, `Übersprungen`, `Nur gelesen (Report) …`, `Fehler …`). Grundlage für `-RestoreFrom`. |
+| `CARO-Observer-Setup_<Server>_<Zeitstempel>.log`         | Vollständiges Textprotokoll: jeder Schritt, alle Fehler und Warnungen, mit Zeitstempel.           |
+| `CARO-Observer-DesiredSettings_<Server>_<Zeitstempel>.json` | Strukturierte Liste aller **Ziel**-Einstellungen (Titel, Beschreibung, Befehl, Zielwert) — unabhängig davon, ob sie angewendet wurden. |
+| `CARO-Observer-Backup_<Server>_<Zeitstempel>.json`       | Je Einstellung: Original- und neuer Wert, Befehl, Zeitstempel, Status (`Geändert`, `Bereits korrekt`, `Übersprungen`, `Nur gelesen (Report) …`, `Fehler …`). Grundlage für `-RestoreFrom`. |
 
 Bei `-ReportOnly` werden dieselben zwei Dateien geschrieben (kein Log-Eintrag
 mit Status `Geändert`, da nichts angewendet wird) — die Backup-Datei ist

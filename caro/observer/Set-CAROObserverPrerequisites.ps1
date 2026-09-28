@@ -35,10 +35,10 @@
 
 .PARAMETER OutputPath
     Verzeichnis fuer Log-, Backup- und Zieleinstellungsdateien.
-    Default: .\CARO-Setup-Logs (relativ zum Scriptverzeichnis)
+    Default: .\CARO-Observer-Setup-Logs (relativ zum Scriptverzeichnis)
 
 .PARAMETER RestoreFrom
-    Pfad zu einer zuvor erzeugten CARO-Backup-*.json Datei. Aktiviert den
+    Pfad zu einer zuvor erzeugten CARO-Observer-Backup-*.json Datei. Aktiviert den
     Rollback-Modus statt des normalen Anwenden-Modus.
 
 .PARAMETER MaxLogSizeKB
@@ -85,7 +85,7 @@
     .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
 
 .EXAMPLE
-    .\Set-CAROObserverPrerequisites.ps1 -RestoreFrom ".\CARO-Setup-Logs\CARO-Backup_DC01_20260922-101500.json"
+    .\Set-CAROObserverPrerequisites.ps1 -RestoreFrom ".\CARO-Observer-Setup-Logs\CARO-Observer-Backup_DC01_20260922-101500.json"
 
 .EXAMPLE
     .\Set-CAROObserverPrerequisites.ps1 -ReportOnly
@@ -101,7 +101,7 @@
 [CmdletBinding()]
 param(
     [string]$ServiceAccount,
-    [string]$OutputPath = (Join-Path -Path $PSScriptRoot -ChildPath 'CARO-Setup-Logs'),
+    [string]$OutputPath = (Join-Path -Path $PSScriptRoot -ChildPath 'CARO-Observer-Setup-Logs'),
     [string]$RestoreFrom,
     [ValidateRange(1024, 4194240)]
     [int]$MaxLogSizeKB = 131072,
@@ -160,9 +160,9 @@ if (-not (Test-Path -Path $OutputPath)) {
 }
 
 $stamp       = $scriptStart.ToString('yyyyMMdd-HHmmss')
-$LogFile     = Join-Path $OutputPath "CARO-Setup_${hostName}_$stamp.log"
-$BackupFile  = Join-Path $OutputPath "CARO-Backup_${hostName}_$stamp.json"
-$DesiredFile = Join-Path $OutputPath "CARO-DesiredSettings_${hostName}_$stamp.json"
+$LogFile     = Join-Path $OutputPath "CARO-Observer-Setup_${hostName}_$stamp.log"
+$BackupFile  = Join-Path $OutputPath "CARO-Observer-Backup_${hostName}_$stamp.json"
+$DesiredFile = Join-Path $OutputPath "CARO-Observer-DesiredSettings_${hostName}_$stamp.json"
 
 $script:BackupEntries = New-Object System.Collections.Generic.List[object]
 $script:ApproveAll    = [bool]$AutoApprove
