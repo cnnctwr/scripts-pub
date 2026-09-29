@@ -345,6 +345,92 @@ Backup-Datei.
   erwiesen hat als die Modul-Cmdlets. Empfehlung: `RSAT-AD-PowerShell` auf dem
   DC installieren, dann wird dieser Pfad automatisch bevorzugt.
 
+## New-CAROObserverAuditGPO.ps1 — dedizierte GPO statt lokaler Audit-Einstellung
+
+Zweites, eigenständiges Script im selben Verzeichnis. Löst gezielt genau das
+eine Problem, das `-GPOCheck` oben aufdecken kann: Eine bestehende
+Gruppenrichtlinie verwaltet bereits Advanced-Audit-Policy-Unterkategorien und
+setzt dadurch die lokal per `auditpol` gesetzten CARO-Werte bei jedem
+Sicherheitsrichtlinien-Refresh zurück. Anstatt die betroffene fremde GPO
+manuell zu bearbeiten, legt dieses Script eine **neue, ausschließlich für
+CARO zuständige GPO** an (Name laut PDF-Vorschlag: `CARO-AD-Observer-Audit`)
+und verknüpft sie mit der Domain-Controllers-OU. Windows führt Advanced
+Audit Policy mehrerer GPOs pro Unterkategorie zusammen (Merge) — die neue GPO
+koexistiert daher mit der bestehenden, solange keine der beiden dieselbe
+Unterkategorie widersprüchlich belegt.
+
+**Wichtiger Unterschied zum Hauptscript:** `Set-CAROObserverPrerequisites.ps1`
+wirkt ausschließlich lokal auf den Server, auf dem es läuft. Dieses Script
+schreibt dagegen in **geteilte, domänenweite Infrastruktur** (neue GPO,
+Verknüpfung mit einer OU) — mit entsprechend größerer Tragweite. Jeder
+Schritt wird einzeln im Klartext angezeigt und bestätigt, genau wie beim
+Hauptscript. Es wurde mangels eigener AD-Testumgebung nicht von mir gegen
+eine echte Domäne verifiziert — vor jedem produktiven Einsatz unbedingt in
+einer Testdomäne durchlaufen lassen und den erzeugten GPO-Inhalt zusätzlich
+in `gpmc.msc` gegenprüfen.
+
+**Was die neue GPO enthält** (ausschließlich das, kein anderer Inhalt):
+
+- Sicherheitsoption „Unterkategorien erzwingen" (`SCENoApplyLegacyAuditPolicy`)
+- Dieselben 9 Audit-Unterkategorien wie das Hauptscript, auf „Erfolg" gesetzt
+
+### Voraussetzungen (zusätzlich zu denen des Hauptscripts)
+
+- Das **GroupPolicy-PowerShell-Modul** (RSAT-GPMC) — anders als das
+  Hauptscript, das bewusst ohne dieses Modul auskommt. Installieren mit
+  `Install-WindowsFeature GPMC`. Das Script bricht mit einer klaren
+  Fehlermeldung ab, falls es fehlt.
+- Berechtigung zum Anlegen und Verknüpfen von GPOs in der Domäne (i. d. R.
+  Domänen-Admin oder Mitgliedschaft in „Group Policy Creator Owners" plus
+  Verknüpfungsrecht auf der Ziel-OU).
+
+### Verwendung
+
+```powershell
+# Anlegen mit Standardwerten (Name "CARO-AD-Observer-Audit", Domain-Controllers-OU, Prioritaet 1)
+.\New-CAROObserverAuditGPO.ps1
+
+# Eigener Name / eigene Ziel-OU / andere Link-Prioritaet
+.\New-CAROObserverAuditGPO.ps1 -GpoName "CARO-AD-Observer-Audit" -TargetOU "OU=Domain Controllers,DC=contoso,DC=com" -GpoLinkOrder 1
+
+# Rueckbau: Verknuepfung loesen und die GPO wieder vollstaendig loeschen
+.\New-CAROObserverAuditGPO.ps1 -RemoveGPO -BackupFile ".\CARO-Observer-Setup-Logs\CARO-Observer-AuditGPO-Backup_DC01_20260929-101500.json"
+```
+
+### Parameter
+
+| Parameter        | Typ    | Default                                  | Beschreibung                                                                                           |
+|-------------------|--------|--------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| `-GpoName`        | string | `CARO-AD-Observer-Audit`                   | Name der neu anzulegenden GPO. Muss noch nicht existieren.                                               |
+| `-TargetOU`       | string | `OU=Domain Controllers,<Domain-DN>`        | DN der OU, mit der die GPO verknüpft wird.                                                                |
+| `-GpoLinkOrder`   | int    | `1`                                         | Link-Priorität bei der Verknüpfung (1 = höchste). Reine organisatorische Entscheidung, keine PDF-Vorgabe. |
+| `-OutputPath`     | string | `.\CARO-Observer-Setup-Logs`               | Verzeichnis für Log- und Backup-Datei — dasselbe wie beim Hauptscript.                                    |
+| `-RemoveGPO`      | switch | `false`                                     | Rückbau-Modus: löst Verknüpfung und löscht die GPO aus `-BackupFile`. Erfordert `-BackupFile`.            |
+| `-BackupFile`     | string | *(nicht gesetzt)*                          | Pfad zu einer `CARO-Observer-AuditGPO-Backup-*.json` eines früheren Erstellungslaufs. Nötig bei `-RemoveGPO`. |
+| `-AutoApprove`    | switch | `false`                                     | Überspringt die Einzelbestätigung. Angesichts der Tragweite (geteilte AD-Infrastruktur) nicht empfohlen.  |
+
+### Erzeugte Dateien
+
+Landen wie beim Hauptscript in `-OutputPath` (Standard:
+`CARO-Observer-Setup-Logs`):
+
+| Datei                                                    | Inhalt                                                                                           |
+|------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| `CARO-Observer-AuditGPO_<Server>_<Zeitstempel>.log`         | Textprotokoll: jeder Schritt (Anlegen, Registry-Option, Audit-Unterkategorien, Versionsnummer, Verknüpfung), alle Fehler und Warnungen. |
+| `CARO-Observer-AuditGPO-Backup_<Server>_<Zeitstempel>.json` | GPO-GUID, Name, verknüpfte OU, Link-Priorität, Erstellungszeitpunkt — Grundlage für `-RemoveGPO`.  |
+
+### Rückbau
+
+```powershell
+.\New-CAROObserverAuditGPO.ps1 -RemoveGPO -BackupFile "<CARO-Observer-AuditGPO-Backup-*.json aus dem Erstellungslauf>"
+```
+
+Löst die Verknüpfung und löscht die GPO vollständig. Da die GPO ausschließlich
+von diesem Script angelegten Inhalt enthält (kein bestehender GPO-Inhalt wird
+je verändert), ist das gefahrlos — es geht kein fremder Inhalt verloren. Die
+Identifikation erfolgt über die in der Backup-Datei gespeicherte GPO-**GUID**,
+nicht über den Namen, für den Fall, dass zwischenzeitlich umbenannt wurde.
+
 ## Lizenz / Haftung
 
 Internes Hilfsscript ohne Gewähr. Vor Einsatz auf produktiven
