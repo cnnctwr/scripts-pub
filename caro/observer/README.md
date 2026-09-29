@@ -83,11 +83,29 @@ und muss einzeln bestätigt werden (`[J]a` / `[N]ein` / `[A]lle weiteren automat
 
 # Konto/Größe/Scope aus einer Eingabedatei übernehmen
 .\Set-CAROObserverPrerequisites.ps1 -DesiredSettingsFile ".\caro-example-config.json"
+
+# Pruefen, ob eine bestehende Gruppenrichtlinie mit dem Script kollidiert
+.\Set-CAROObserverPrerequisites.ps1 -GPOCheck
 ```
 
 ## Best Practice: Empfohlener Ablauf beim ersten Einsatz auf einem Server
 
-### 1. Bestandsaufnahme, bevor irgendetwas angefasst wird
+### 1. GPO-Konflikte ausschließen
+
+```powershell
+.\Set-CAROObserverPrerequisites.ps1 -GPOCheck
+```
+
+Prüft, ob eine bestehende Gruppenrichtlinie bereits Audit-Richtlinien, die
+Registry-Option „Unterkategorien erzwingen" oder die
+Event-Log-Readers-Gruppenmitgliedschaft verwaltet — in dem Fall würde eine
+rein lokale Änderung durch dieses Script beim nächsten
+Sicherheitsrichtlinien-Refresh wieder zurückgesetzt. Details siehe Abschnitt
+„`-GPOCheck` — GPO-Konflikte erkennen" weiter unten. Ändert nichts dauerhaft
+(der Firewall-Teil setzt testweise, wartet, und stellt danach immer den
+Ausgangswert wieder her).
+
+### 2. Bestandsaufnahme, bevor irgendetwas angefasst wird
 
 ```powershell
 .\Set-CAROObserverPrerequisites.ps1 -ReportOnly -ServiceAccount "CUSATUM\sa-caro"
@@ -129,21 +147,21 @@ sich der Urzustand nicht mehr automatisiert wiederherstellen.
 > volles Eingabeformat würde sie fälschlich als frei änderbar erscheinen
 > lassen. `-ReportOnly` deckt den Vorab-Einblick trotzdem vollständig ab.
 
-### 2. Erster echter Lauf, mit demselben Servicekonto
+### 3. Erster echter Lauf, mit demselben Servicekonto
 
 ```powershell
 .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
 ```
 
 Jede Einstellung einzeln bestätigen wie gewohnt. Erzeugt dieselben drei
-Dateitypen wie in Schritt 1 — diesmal mit echten Änderungen: Die
+Dateitypen wie in Schritt 2 — diesmal mit echten Änderungen: Die
 `CARO-Observer-Backup_*.json` enthält für jede tatsächlich geänderte Einstellung
 Original- **und** neuen Wert (Status `Geändert`).
 
-### 3. Rollback bei Bedarf
+### 4. Rollback bei Bedarf
 
 ```powershell
-.\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 1 oder 2>"
+.\Set-CAROObserverPrerequisites.ps1 -RestoreFrom "<gesicherte Backup-Datei aus Schritt 2 oder 3>"
 ```
 
 Erzeugt wieder ein Log und eine eigene, neue Backup-Datei — **keine**
@@ -161,7 +179,9 @@ erneut angewendet wird.
 | `-RestoreFrom`           | string  | *(nicht gesetzt)*         | Pfad zu einer zuvor erzeugten `CARO-Observer-Backup-*.json`. Aktiviert den Rollback-Modus. Nicht kombinierbar mit `-ReportOnly`. |
 | `-MaxLogSizeKB`          | int     | `131072` (128 MB)         | Gewünschte Mindest-Maximalgröße des Security-Eventlogs in KB. Überschreibt einen Wert aus `-DesiredSettingsFile`. |
 | `-DesiredSettingsFile`   | string  | *(nicht gesetzt)*         | Pfad zu einer JSON-Eingabedatei mit `ServiceAccount`, `MaxLogSizeKB` und/oder `Scope` (siehe unten). Ein explizit auf der Kommandozeile gesetzter Parameter hat immer Vorrang vor dem Wert aus der Datei. |
-| `-ReportOnly`            | switch  | `false`                    | Reiner Lesepass: ändert nichts, schreibt Ist-Wert + Soll-Wert + Übereinstimmung jeder Einstellung in die Backup-Datei (Status `Nur gelesen (Report)`). Fragt wie der Apply-Modus bei fehlendem `-ServiceAccount` interaktiv danach (Enter = Schritt auslassen). Nicht kombinierbar mit `-RestoreFrom`. |
+| `-ReportOnly`            | switch  | `false`                    | Reiner Lesepass: ändert nichts, schreibt Ist-Wert + Soll-Wert + Übereinstimmung jeder Einstellung in die Backup-Datei (Status `Nur gelesen (Report)`). Fragt wie der Apply-Modus bei fehlendem `-ServiceAccount` interaktiv danach (Enter = Schritt auslassen). Nicht kombinierbar mit `-RestoreFrom`/`-GPOCheck`. |
+| `-GPOCheck`              | switch  | `false`                    | Reiner Diagnose-Modus: prüft, ob eine bestehende Gruppenrichtlinie Audit-Richtlinien, „Unterkategorien erzwingen" oder die Event-Log-Readers-Gruppenmitgliedschaft verwaltet. Braucht kein `-ServiceAccount`. Nicht kombinierbar mit `-ReportOnly`/`-RestoreFrom`. Details siehe eigener Abschnitt unten. |
+| `-GPOCheckWaitMinutes`   | int     | `6`                         | Wartezeit für den aktiven Firewall-Persistenztest bei `-GPOCheck`. |
 | `-AutoApprove`           | switch  | `false`                    | Überspringt die Einzelbestätigung (weiterhin vollständig protokolliert). Nicht für den ersten Lauf empfohlen. |
 
 ### `-DesiredSettingsFile` — Eingabe-JSON
@@ -217,6 +237,55 @@ Report-Only-Datei ist also, unabhängig davon, ob das Script vorher schon
 einmal gelaufen ist, sofort als vollständige Rollback-Referenz nutzbar
 (siehe Abschnitt „Rollback").
 
+### `-GPOCheck` — GPO-Konflikte erkennen
+
+```powershell
+.\Set-CAROObserverPrerequisites.ps1 -GPOCheck
+```
+
+**Hintergrund:** Dieses Script setzt Audit-Richtlinien, die Registry-Option
+„Unterkategorien erzwingen" und die Event-Log-Readers-Gruppenmitgliedschaft
+lokal auf dem Server. Verwaltet in der Domäne bereits eine Gruppenrichtlinie
+(GPO) denselben Bereich, wird die lokale Änderung beim nächsten
+Sicherheitsrichtlinien-Refresh (auf einem DC alle paar Minuten) wieder
+zurückgesetzt — das Script selbst bearbeitet aus Sicherheitsgründen **keine**
+GPO automatisch (zu großer, geteilter Wirkungsradius). `-GPOCheck` macht ein
+solches Risiko sichtbar, **bevor** es zu stillen Fehlfunktionen führt.
+
+**Was geprüft wird und wie:**
+
+| Bereich | Prüfmethode | Dauer |
+|---|---|---|
+| Audit-Richtlinien (9 Unterkategorien) | Rein lesend: `audit.csv` aller GPOs im SYSVOL | Sekunden |
+| Unterkategorien erzwingen (Registry) | Rein lesend: `GptTmpl.inf` (Registry Values) derselben GPOs | Sekunden |
+| Event Log Readers (Gruppenmitgliedschaft) | Rein lesend: `GptTmpl.inf` (Eingeschränkte Gruppen) derselben GPOs | Sekunden |
+| SACL | Nicht betroffen — AD-repliziertes Objekt, kein Gruppenrichtlinien-Refresh-Mechanismus. Nur Hinweistext, kein Test. | — |
+| Firewall (3 Regeln) | Aktiver Test: testweise aktiviert, `-GPOCheckWaitMinutes` gewartet, erneut geprüft, danach **immer** auf Ausgangswert zurückgesetzt (kein bleibender Seiteneffekt) | Standard 6 Minuten |
+
+**Konsequenz für den produktiven Lauf**, je nach Ergebnis:
+
+| Bereich | Kein GPO-Konflikt | GPO-Konflikt gefunden |
+|---|---|---|
+| Audit-Richtlinien | Normaler Lauf reicht aus, Einstellung bleibt dauerhaft stehen. | Normaler Lauf funktioniert kurzfristig, springt beim nächsten Refresh zurück. Fehlende Unterkategorien müssen zusätzlich manuell in der genannten GPO ergänzt werden. |
+| Event Log Readers | Normaler Lauf reicht aus, Mitgliedschaft bleibt bestehen. | Konto muss zusätzlich manuell in der „Eingeschränkte Gruppen"-Liste der genannten GPO eingetragen werden. |
+| Firewall | Normaler Lauf reicht aus, Regeln bleiben aktiv. | Betroffene Regeln müssen zusätzlich in der zuständigen Firewall-GPO aktiviert werden. |
+
+Der normale Lauf schadet in keinem Fall — die Frage ist nur, ob er **allein**
+ausreicht oder **zusätzlich** eine manuelle GPO-Anpassung nötig ist, damit die
+Einstellung dauerhaft hält.
+
+**Ausgabe:** Neben dem üblichen Log schreibt `-GPOCheck` einen eigenen,
+menschenlesbaren Bericht mit den konkreten Handlungsempfehlungen:
+`CARO-Observer-GPOCheck_<Server>_<Zeitstempel>.log` (siehe „Erzeugte Dateien").
+
+**Bekannte Einschränkung:** Bei mehreren GPOs mit widersprüchlichen
+Einstellungen im selben Bereich wird nicht die volle
+RSoP-Präzedenzauflösung (Vererbung, Erzwungen, Verknüpfungsreihenfolge)
+nachgebildet — der Check meldet, *dass* mindestens eine zuständige GPO die
+benötigte Unterkategorie nicht korrekt abdeckt, nennt aber ggf. nicht
+zwingend die einzelne „gewinnende" GPO. Bei mehreren infrage kommenden GPOs
+zusätzlich `gpresult /h` prüfen.
+
 ## Erzeugte Dateien
 
 Alle Dateien landen in `-OutputPath` (Standard: `CARO-Observer-Setup-Logs` neben dem
@@ -227,11 +296,14 @@ Script), benannt mit Servername und Zeitstempel:
 | `CARO-Observer-Setup_<Server>_<Zeitstempel>.log`         | Vollständiges Textprotokoll: jeder Schritt, alle Fehler und Warnungen, mit Zeitstempel.           |
 | `CARO-Observer-DesiredSettings_<Server>_<Zeitstempel>.json` | Strukturierte Liste aller **Ziel**-Einstellungen (Titel, Beschreibung, Befehl, Zielwert) — unabhängig davon, ob sie angewendet wurden. |
 | `CARO-Observer-Backup_<Server>_<Zeitstempel>.json`       | Je Einstellung: Original- und neuer Wert, Befehl, Zeitstempel, Status (`Geändert`, `Bereits korrekt`, `Übersprungen`, `Nur gelesen (Report) …`, `Fehler …`). Grundlage für `-RestoreFrom`. |
+| `CARO-Observer-GPOCheck_<Server>_<Zeitstempel>.log`      | Nur bei `-GPOCheck`: menschenlesbarer Bericht mit Ergebnis je Bereich und konkreter Handlungsempfehlung, falls eine GPO etwas verwaltet. |
 
 Bei `-ReportOnly` werden dieselben zwei Dateien geschrieben (kein Log-Eintrag
 mit Status `Geändert`, da nichts angewendet wird) — die Backup-Datei ist
 trotzdem eine vollständige, für `-RestoreFrom` nutzbare Ist-Zustands-Momentaufnahme
-(siehe „Rollback").
+(siehe „Rollback"). Bei `-GPOCheck` werden nur das Log und der GPOCheck-Bericht
+geschrieben — keine Backup- oder DesiredSettings-Datei, da hier nichts
+angewendet oder angestrebt wird.
 
 ## Rollback
 

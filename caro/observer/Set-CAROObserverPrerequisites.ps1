@@ -77,6 +77,27 @@
     -DesiredSettingsFile. Nicht gleichzeitig
     mit -RestoreFrom verwendbar.
 
+.PARAMETER GPOCheck
+    Reiner Diagnose-Modus: prueft, ob eine bestehende Gruppenrichtlinie (GPO)
+    in der Domaene bereits Audit-Richtlinien, die Registry-Option
+    "Unterkategorien erzwingen" oder die Event-Log-Readers-Gruppenmitgliedschaft
+    verwaltet. Falls ja, wuerde eine lokale Aenderung durch dieses Script beim
+    naechsten Sicherheitsrichtlinien-Refresh wieder zurueckgesetzt. Audit- und
+    Gruppenmitgliedschafts-Pruefung sind rein lesend (SYSVOL-Dateien der GPOs),
+    die drei Firewall-Regeln werden aktiv getestet (testweise gesetzt, bis zu
+    -GPOCheckWaitMinutes gewartet, erneut geprueft, danach IMMER auf den
+    Ausgangswert zurueckgesetzt - kein bleibender Seiteneffekt). SACL ist
+    grundsaetzlich nicht betroffen (AD-repliziert, kein GPO-Refresh-Mechanismus)
+    und wird nur informativ erwaehnt, nicht getestet. Schreibt zusaetzlich zum
+    normalen Log einen eigenen Bericht mit konkreten Handlungsempfehlungen.
+    Braucht kein -ServiceAccount. Nicht gleichzeitig mit -ReportOnly oder
+    -RestoreFrom verwendbar.
+
+.PARAMETER GPOCheckWaitMinutes
+    Wartezeit in Minuten fuer den aktiven Firewall-Persistenztest bei
+    -GPOCheck. Default: 6 (Sicherheitsrichtlinien-Refresh auf einem DC laeuft
+    alle ~5 Minuten, 6 als Puffer).
+
 .PARAMETER AutoApprove
     Ueberspringt die Einzelbestaetigung (weiterhin vollstaendig protokolliert).
     Nicht empfohlen fuer den ersten Lauf.
@@ -93,6 +114,9 @@
 .EXAMPLE
     .\Set-CAROObserverPrerequisites.ps1 -DesiredSettingsFile ".\caro-testlab.json"
 
+.EXAMPLE
+    .\Set-CAROObserverPrerequisites.ps1 -GPOCheck
+
 .NOTES
     PowerShell 5.1 kompatibel. Benoetigt KEIN GroupPolicy/RSAT-Modul.
     Muss als Administrator (Domaenen-Admin empfohlen) auf dem Domaenencontroller
@@ -107,11 +131,18 @@ param(
     [int]$MaxLogSizeKB = 131072,
     [string]$DesiredSettingsFile,
     [switch]$ReportOnly,
+    [switch]$GPOCheck,
+    [ValidateRange(1, 60)]
+    [int]$GPOCheckWaitMinutes = 6,
     [switch]$AutoApprove
 )
 
-if ($ReportOnly -and $RestoreFrom) {
-    throw "-ReportOnly und -RestoreFrom koennen nicht gleichzeitig verwendet werden."
+$script:ActiveModeCount = 0
+foreach ($modeFlag in @($ReportOnly, [bool]$RestoreFrom, $GPOCheck)) {
+    if ($modeFlag) { $script:ActiveModeCount++ }
+}
+if ($script:ActiveModeCount -gt 1) {
+    throw "-ReportOnly, -RestoreFrom und -GPOCheck koennen nicht gleichzeitig verwendet werden."
 }
 
 $ErrorActionPreference = 'Stop'
@@ -163,6 +194,7 @@ $stamp       = $scriptStart.ToString('yyyyMMdd-HHmmss')
 $LogFile     = Join-Path $OutputPath "CARO-Observer-Setup_${hostName}_$stamp.log"
 $BackupFile  = Join-Path $OutputPath "CARO-Observer-Backup_${hostName}_$stamp.json"
 $DesiredFile = Join-Path $OutputPath "CARO-Observer-DesiredSettings_${hostName}_$stamp.json"
+$GpoCheckFile = Join-Path $OutputPath "CARO-Observer-GPOCheck_${hostName}_$stamp.log"
 
 $script:BackupEntries = New-Object System.Collections.Generic.List[object]
 $script:ApproveAll    = [bool]$AutoApprove
@@ -654,6 +686,202 @@ function Set-CaroFirewallRuleEnabled {
 }
 #endregion
 
+#region ---------------------------------------------------------- GPO-Check ---
+function Get-GpoSysvolBase {
+    $domainDns = ($script:DomainDN -split ',' | ForEach-Object { $_ -replace '^DC=', '' }) -join '.'
+    return "\\$domainDns\SYSVOL\$domainDns\Policies"
+}
+
+function Get-DomainGpoList {
+    # Listet alle Gruppenrichtlinienobjekte der Domaene per LDAP auf - kein
+    # GroupPolicy-/RSAT-Modul noetig, nur der AD-Lesezugriff, den das Script
+    # ohnehin schon hat.
+    $gpoContainer = [ADSI]"LDAP://CN=Policies,CN=System,$script:DomainDN"
+    $gpos = @()
+    foreach ($child in $gpoContainer.psbase.Children) {
+        try {
+            if ($child.psbase.SchemaClassName -ne 'groupPolicyContainer') { continue }
+            $rawCn = [string]$child.psbase.Properties['cn'].Value
+            $guid = $rawCn.Trim('{', '}')
+            $displayNameProp = $child.psbase.Properties['displayName']
+            $name = if ($displayNameProp -and $displayNameProp.Count -gt 0) { [string]$displayNameProp.Value } else { $rawCn }
+            $gpos += [pscustomobject]@{ Guid = $guid; Name = $name }
+        } catch {
+            Write-Log -Level WARN -Message "GPO-Objekt konnte nicht ausgelesen werden: $($_.Exception.Message)"
+        }
+    }
+    return $gpos
+}
+
+function Get-GpoAuditCsvRows {
+    param([string]$Guid, [string]$SysvolBase)
+    $path = Join-Path $SysvolBase "{$Guid}\Machine\Microsoft\Windows NT\Audit\audit.csv"
+    if (-not (Test-Path -Path $path)) { return $null }
+    try { return @(Import-Csv -Path $path -ErrorAction Stop) } catch {
+        Write-Log -Level WARN -Message "audit.csv der GPO {$Guid} konnte nicht gelesen werden: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Get-GpoGptTmplContent {
+    param([string]$Guid, [string]$SysvolBase)
+    $path = Join-Path $SysvolBase "{$Guid}\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf"
+    if (-not (Test-Path -Path $path)) { return $null }
+    try { return Get-Content -Path $path -ErrorAction Stop } catch {
+        Write-Log -Level WARN -Message "GptTmpl.inf der GPO {$Guid} konnte nicht gelesen werden: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Test-GpoAuditPolicyConflicts {
+    # Prueft fuer jede der 9 benoetigten Audit-Unterkategorien, ob irgendeine
+    # GPO in der Domaene die erweiterte Ueberwachungsrichtlinie verwaltet -
+    # und falls ja, ob genau diese Unterkategorie darin mit "Erfolg" enthalten
+    # ist. Sobald IRGENDEINE GPO ueberhaupt eine audit.csv mitbringt, werden
+    # bei jedem Richtlinien-Refresh alle dort NICHT gelisteten Unterkategorien
+    # zurueckgesetzt - deshalb zaehlt schon die blosse Praesenz einer fremden
+    # audit.csv als Risiko fuer alles, was sie nicht explizit auflistet.
+    # Setting Value laut audit.csv-Format: 0=Keine Ueberwachung, 1=Erfolg,
+    # 2=Fehler, 3=Erfolg und Fehler - numerisch, also sprachunabhaengig.
+    param([array]$Gpos, [string]$SysvolBase)
+
+    $gposWithAuditCsv = @()
+    $rowsByGpo = @{}
+    foreach ($gpo in $Gpos) {
+        $rows = Get-GpoAuditCsvRows -Guid $gpo.Guid -SysvolBase $SysvolBase
+        if ($rows) {
+            $gposWithAuditCsv += $gpo
+            $rowsByGpo[$gpo.Guid] = $rows
+        }
+    }
+
+    $results = [ordered]@{}
+    foreach ($key in $script:AuditSubcategoryMap.Keys) {
+        $info  = $script:AuditSubcategoryMap[$key]
+        $label = $script:AuditCategoryLabel[$key]
+
+        if ($gposWithAuditCsv.Count -eq 0) {
+            $results[$key] = [pscustomobject]@{ Label = $label; Status = 'LokalVerwaltet'; Detail = $null }
+            continue
+        }
+
+        $coveringGpo = $null
+        $wrongGpos = @()
+        foreach ($gpo in $gposWithAuditCsv) {
+            $match = $rowsByGpo[$gpo.Guid] | Where-Object { ($_.'Subcategory GUID' -replace '[{}]', '') -ieq $info.Guid }
+            if (-not $match) { continue }
+            $settingValue = 0
+            [void][int]::TryParse([string]$match.'Setting Value', [ref]$settingValue)
+            if ($settingValue -in 1, 3) { $coveringGpo = $gpo }
+            else { $wrongGpos += "$($gpo.Name) (Wert $settingValue)" }
+        }
+
+        if ($coveringGpo) {
+            $results[$key] = [pscustomobject]@{ Label = $label; Status = 'LokalVerwaltet'; Detail = "Bereits korrekt in GPO '$($coveringGpo.Name)' auf Erfolg gesetzt." }
+        } else {
+            $gpoNames = ($gposWithAuditCsv | ForEach-Object { $_.Name }) -join ', '
+            $extra = if ($wrongGpos.Count -gt 0) { " (dort mit falschem Wert: $($wrongGpos -join '; '))" } else { '' }
+            $results[$key] = [pscustomobject]@{ Label = $label; Status = 'Konflikt'; Detail = "Keine der die erweiterte Ueberwachungsrichtlinie verwaltenden GPOs ($gpoNames) setzt diese Unterkategorie korrekt auf Erfolg$extra - wird bei jedem Richtlinien-Refresh zurueckgesetzt." }
+        }
+    }
+    return $results
+}
+
+function Test-GpoForceSubcategoryConflict {
+    param([array]$Gpos, [string]$SysvolBase)
+    $findings = @()
+    foreach ($gpo in $Gpos) {
+        $content = Get-GpoGptTmplContent -Guid $gpo.Guid -SysvolBase $SysvolBase
+        if (-not $content) { continue }
+        $line = $content | Where-Object { $_ -match 'SCENoApplyLegacyAuditPolicy\s*=\s*\d+,\s*(\d+)' } | Select-Object -First 1
+        if ($line -and $line -match 'SCENoApplyLegacyAuditPolicy\s*=\s*\d+,\s*(\d+)') {
+            $findings += [pscustomobject]@{ Gpo = $gpo.Name; Value = [int]$Matches[1] }
+        }
+    }
+    if ($findings.Count -eq 0) {
+        return [pscustomobject]@{ Status = 'LokalVerwaltet'; Detail = $null }
+    }
+    $correct = $findings | Where-Object { $_.Value -eq 1 }
+    if ($correct) {
+        return [pscustomobject]@{ Status = 'LokalVerwaltet'; Detail = "Bereits korrekt in GPO '$($correct[0].Gpo)' auf Aktiviert gesetzt." }
+    }
+    $names = ($findings | ForEach-Object { "$($_.Gpo) (Wert $($_.Value))" }) -join ', '
+    return [pscustomobject]@{ Status = 'Konflikt'; Detail = "Wird von folgender GPO verwaltet, aber nicht auf 'Aktiviert' gesetzt: $names - lokale Aenderung wird zurueckgesetzt." }
+}
+
+function Test-GpoEventLogReadersConflict {
+    param([array]$Gpos, [string]$SysvolBase)
+    $sidPattern = [regex]::Escape($script:EventLogReadersSid)
+    $findings = @()
+    foreach ($gpo in $Gpos) {
+        $content = Get-GpoGptTmplContent -Guid $gpo.Guid -SysvolBase $SysvolBase
+        if (-not $content) { continue }
+        $line = $content | Where-Object { $_ -match "\*$sidPattern__Members\s*=" } | Select-Object -First 1
+        if ($line) {
+            $findings += [pscustomobject]@{ Gpo = $gpo.Name }
+        }
+    }
+    if ($findings.Count -eq 0) {
+        return [pscustomobject]@{ Status = 'LokalVerwaltet'; Detail = $null }
+    }
+    $names = ($findings | ForEach-Object { $_.Gpo }) -join ', '
+    return [pscustomobject]@{ Status = 'Konflikt'; Detail = "Mitgliedschaft wird per 'Eingeschraenkte Gruppen' von folgender GPO verwaltet: $names - lokal hinzugefuegte Konten werden bei jedem Richtlinien-Refresh wieder entfernt, falls sie dort nicht gelistet sind." }
+}
+
+function Test-GpoFirewallPersistence {
+    # Aktiver Test, da GPO-verwaltete Firewall-Regeln binaer kodiert sind und
+    # sich nicht mit vertretbarem Aufwand rein lesend pruefen lassen (anders
+    # als Audit-Richtlinie/Registry/Gruppenmitgliedschaft oben). Setzt jede
+    # der drei Regeln testweise, wartet, prueft erneut, und stellt IMMER den
+    # Ausgangswert wieder her - kein bleibender Seiteneffekt.
+    param([int]$WaitMinutes = 6)
+    $results = @()
+    $originals = @{}
+
+    foreach ($fw in $script:FirewallRules) {
+        try {
+            $originals[$fw.Name] = Get-CaroFirewallRuleEnabled -RuleName $fw.Name
+            Set-CaroFirewallRuleEnabled -RuleName $fw.Name -Value $true
+        } catch {
+            $results += [pscustomobject]@{ Rule = $fw.Label; Status = 'Fehler'; Detail = $_.Exception.Message }
+        }
+    }
+
+    $totalSeconds = $WaitMinutes * 60
+    Write-Host ""
+    Write-Host "Teste Firewall-Regeln. Dies kann bis zu $WaitMinutes Minuten dauern..." -ForegroundColor Cyan
+    Write-Log -Level INFO -Message "Firewall-Persistenztest gestartet, Wartezeit $WaitMinutes Minuten."
+    $elapsed = 0
+    while ($elapsed -lt $totalSeconds) {
+        $remaining = $totalSeconds - $elapsed
+        $pct = [int](($elapsed / $totalSeconds) * 100)
+        Write-Progress -Activity "Firewall-Persistenztest" -Status "Verbleibend: $([TimeSpan]::FromSeconds($remaining).ToString('mm\:ss'))" -PercentComplete $pct
+        $step = [Math]::Min(5, $remaining)
+        Start-Sleep -Seconds $step
+        $elapsed += $step
+    }
+    Write-Progress -Activity "Firewall-Persistenztest" -Completed
+
+    foreach ($fw in $script:FirewallRules) {
+        if (-not $originals.ContainsKey($fw.Name)) { continue }
+        try {
+            $now = Get-CaroFirewallRuleEnabled -RuleName $fw.Name
+            if ($now) {
+                $results += [pscustomobject]@{ Rule = $fw.Label; Status = 'LokalVerwaltet'; Detail = $null }
+            } else {
+                $results += [pscustomobject]@{ Rule = $fw.Label; Status = 'Konflikt'; Detail = "Regel wurde nach dem Setzen wieder deaktiviert - vermutlich von einer Gruppenrichtlinie (oder vergleichbarem zentralem Management) verwaltet." }
+            }
+        } catch {
+            $results += [pscustomobject]@{ Rule = $fw.Label; Status = 'Fehler'; Detail = $_.Exception.Message }
+        }
+        try { Set-CaroFirewallRuleEnabled -RuleName $fw.Name -Value $originals[$fw.Name] } catch {
+            Write-Log -Level WARN -Message "Ausgangswert von '$($fw.Label)' konnte nicht wiederhergestellt werden: $($_.Exception.Message)"
+        }
+    }
+    return $results
+}
+#endregion
+
 #region ---------------------------------------------------------- Settings-Katalog ---
 function New-CaroSettingDefinitions {
     param(
@@ -935,7 +1163,97 @@ if ($DesiredSettingsFile) {
     }
 }
 
-if ($ReportOnly) {
+if ($GPOCheck) {
+    #region -------------------------------------------------- GPO-Check-Modus ---
+    if (-not $script:DomainDN) {
+        Write-Log -Level ERROR -Message "GPO-Check nicht moeglich: Domain-DN konnte nicht ermittelt werden."
+        throw "GPO-Check nicht moeglich: Domain-DN unbekannt."
+    }
+
+    Write-Host ""
+    Write-Host "==================== GPO-Konflikt-Check ====================" -ForegroundColor White
+    Write-Log -Level INFO -Message "GPO-Check gestartet."
+
+    $sysvolBase = Get-GpoSysvolBase
+    $gpos = Get-DomainGpoList
+    Write-Log -Level INFO -Message "$($gpos.Count) Gruppenrichtlinienobjekte in der Domaene gefunden."
+
+    $auditResults = Test-GpoAuditPolicyConflicts -Gpos $gpos -SysvolBase $sysvolBase
+    Write-Host ""
+    Write-Host "-- Audit-Richtlinien --" -ForegroundColor Cyan
+    foreach ($key in $auditResults.Keys) {
+        $r = $auditResults[$key]
+        $level = if ($r.Status -eq 'Konflikt') { 'WARN' } else { 'RESULT' }
+        $msg = "[$key] $($r.Label): $($r.Status)" + $(if ($r.Detail) { " - $($r.Detail)" } else { '' })
+        Write-Log -Level $level -Message $msg
+    }
+
+    $forceResult = Test-GpoForceSubcategoryConflict -Gpos $gpos -SysvolBase $sysvolBase
+    Write-Host ""
+    Write-Host "-- Unterkategorien erzwingen (Registry) --" -ForegroundColor Cyan
+    $forceLevel = if ($forceResult.Status -eq 'Konflikt') { 'WARN' } else { 'RESULT' }
+    Write-Log -Level $forceLevel -Message "ForceSubcategoryPolicy: $($forceResult.Status)$(if ($forceResult.Detail) { " - $($forceResult.Detail)" })"
+
+    $eventLogResult = Test-GpoEventLogReadersConflict -Gpos $gpos -SysvolBase $sysvolBase
+    Write-Host ""
+    Write-Host "-- Event Log Readers (Gruppenmitgliedschaft) --" -ForegroundColor Cyan
+    $eventLogLevel = if ($eventLogResult.Status -eq 'Konflikt') { 'WARN' } else { 'RESULT' }
+    Write-Log -Level $eventLogLevel -Message "EventLogReaders: $($eventLogResult.Status)$(if ($eventLogResult.Detail) { " - $($eventLogResult.Detail)" })"
+
+    Write-Host ""
+    Write-Host "-- SACL --" -ForegroundColor Cyan
+    Write-Log -Level INFO -Message "SACL: Nicht betroffen - SACL ist eine AD-Objekteigenschaft, wird per AD-Replikation verteilt, nicht per Gruppenrichtlinien-Refresh ueberschrieben. Kein Test noetig."
+
+    $firewallResults = Test-GpoFirewallPersistence -WaitMinutes $GPOCheckWaitMinutes
+    Write-Host ""
+    Write-Host "-- Firewall --" -ForegroundColor Cyan
+    foreach ($r in $firewallResults) {
+        $level = if ($r.Status -eq 'Konflikt') { 'WARN' } elseif ($r.Status -eq 'Fehler') { 'ERROR' } else { 'RESULT' }
+        Write-Log -Level $level -Message "$($r.Rule): $($r.Status)$(if ($r.Detail) { " - $($r.Detail)" })"
+    }
+
+    $allFindings = @()
+    foreach ($key in $auditResults.Keys) {
+        $allFindings += [pscustomobject]@{ Bereich = "Audit: $($auditResults[$key].Label)"; Status = $auditResults[$key].Status; Detail = $auditResults[$key].Detail }
+    }
+    $allFindings += [pscustomobject]@{ Bereich = 'Unterkategorien erzwingen (Registry)'; Status = $forceResult.Status; Detail = $forceResult.Detail }
+    $allFindings += [pscustomobject]@{ Bereich = 'Event Log Readers (Gruppenmitgliedschaft)'; Status = $eventLogResult.Status; Detail = $eventLogResult.Detail }
+    foreach ($r in $firewallResults) {
+        $allFindings += [pscustomobject]@{ Bereich = "Firewall: $($r.Rule)"; Status = $r.Status; Detail = $r.Detail }
+    }
+
+    $conflictCount = @($allFindings | Where-Object { $_.Status -eq 'Konflikt' }).Count
+
+    $reportLines = @()
+    $reportLines += "CARO-AD-Observer - GPO-Konflikt-Check"
+    $reportLines += "Server: $hostName"
+    $reportLines += "Zeitpunkt: $($scriptStart.ToString('yyyy-MM-dd HH:mm:ss'))"
+    $reportLines += ""
+    $reportLines += "Ergebnis je Bereich:"
+    foreach ($f in $allFindings) {
+        $reportLines += "  [$($f.Status)] $($f.Bereich)" + $(if ($f.Detail) { " - $($f.Detail)" } else { '' })
+    }
+    $reportLines += "  [Nicht betroffen] SACL - AD-repliziert, kein Gruppenrichtlinien-Risiko."
+    $reportLines += ""
+    if ($conflictCount -eq 0) {
+        $reportLines += "GESAMTBEFUND: Keine Gruppenrichtlinien-Konflikte gefunden. Das Script kann wie in der README dokumentiert (Best Practice) ausgefuehrt werden."
+    } else {
+        $reportLines += "GESAMTBEFUND: $conflictCount Bereich(e) werden von einer Gruppenrichtlinie ueberschrieben. Der normale Script-Lauf funktioniert kurzfristig, haelt dort aber NICHT dauerhaft. Zusaetzlich noetig: die betroffene(n) GPO(s) manuell um die fehlenden Werte ergaenzen (siehe Details oben) - danach haelt es zuverlaessig."
+    }
+
+    $reportLines | Set-Content -Path $GpoCheckFile -Encoding UTF8
+    Write-Log -Level INFO -Message "GPO-Check-Bericht geschrieben nach $GpoCheckFile"
+
+    Write-Host ""
+    Write-Host "==================== GPO-Check: Gesamtbefund ====================" -ForegroundColor White
+    if ($conflictCount -eq 0) {
+        Write-Host "Keine Gruppenrichtlinien-Konflikte gefunden - Script kann wie dokumentiert ausgefuehrt werden." -ForegroundColor Green
+    } else {
+        Write-Host "$conflictCount Bereich(e) mit Gruppenrichtlinien-Konflikt - siehe $GpoCheckFile fuer Details und naechste Schritte." -ForegroundColor Yellow
+    }
+    Write-Host "Bericht: $GpoCheckFile"
+    #endregion
+} elseif ($ReportOnly) {
     #region -------------------------------------------------- Report-Modus ---
     if (-not $ServiceAccount) {
         $answer = Read-Host "Domain\Benutzername des CARO-Servicekontos fuer die Gruppe 'Event Log Readers' (Enter = Schritt auslassen - Report/Backup dann ohne diesen Punkt)"
@@ -1036,7 +1354,7 @@ if ($ReportOnly) {
     #endregion
 }
 
-Save-Backup
+if (-not $GPOCheck) { Save-Backup }
 
 $summary = $script:BackupEntries | Group-Object Status | Select-Object Name, Count
 Write-Host ""
@@ -1046,9 +1364,13 @@ Write-Host ("  {0,-28}: {1}" -f 'Fehler gesamt', $script:ErrorCount)
 Write-Host ("  {0,-28}: {1}" -f 'Warnungen gesamt', $script:WarningCount)
 Write-Host ""
 Write-Host "Log-Datei         : $LogFile"
-Write-Host "Backup-Datei       : $BackupFile"
-Write-Host "                     (Rollback: .\$(Split-Path -Leaf $PSCommandPath) -RestoreFrom '$BackupFile')"
-if (-not $RestoreFrom) { Write-Host "Zieleinstellungen  : $DesiredFile" }
+if ($GPOCheck) {
+    Write-Host "GPO-Check-Bericht : $GpoCheckFile"
+} else {
+    Write-Host "Backup-Datei       : $BackupFile"
+    Write-Host "                     (Rollback: .\$(Split-Path -Leaf $PSCommandPath) -RestoreFrom '$BackupFile')"
+    if (-not $RestoreFrom) { Write-Host "Zieleinstellungen  : $DesiredFile" }
+}
 
 Write-Log -Level INFO -Message "Script beendet. Fehler=$script:ErrorCount Warnungen=$script:WarningCount"
 
