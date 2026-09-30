@@ -306,6 +306,45 @@ if ($RemoveGPO) {
         Write-Log -Level RESULT -Message "audit.csv geschrieben: $auditCsvPath ($($auditSubcategories.Count) Unterkategorien)."
     }
 
+    # --- Client-Side-Extensions registrieren (gPCMachineExtensionNames) ---
+    # Ohne diesen Eintrag weiss der Group-Policy-Client nicht, dass diese GPO
+    # ueberhaupt Computer-Inhalt hat - sie wuerde bei jedem Refresh ignoriert
+    # und taucht nicht einmal unter "Angewendete Gruppenrichtlinienobjekte"
+    # auf, obwohl Verknuepfung/Berechtigungen/Inhalt korrekt sind (live
+    # verifiziert). Normalerweise setzen GPMC/die GroupPolicy-Cmdlets dieses
+    # Attribut automatisch beim Bearbeiten einer Einstellung ueber die GUI;
+    # da wir audit.csv/GptTmpl.inf direkt ins SYSVOL schreiben, muss es hier
+    # manuell nachgezogen werden. Die beiden GUID-Paare sind feste, windows-
+    # weit identische Kennungen (nicht domaenenspezifisch):
+    #   - Sicherheitseinstellungen (verarbeitet GptTmpl.inf): live aus einer
+    #     uebers GPMC erzeugten Test-GPO verifiziert.
+    #   - Audit-Richtlinienkonfiguration (verarbeitet audit.csv): laut
+    #     offizieller Microsoft-Spezifikation [MS-GPAC], Abschnitt
+    #     "Audit Configuration Extension"
+    #     (learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpac).
+    $cseSecuritySettings = '{827D319E-6EAC-11D2-A4EA-00C04F79F83A}{803E14A0-B4FB-11D0-A0D0-00A0C90F574B}'
+    $cseAuditPolicy      = '{F3CCC681-B74C-4060-9F26-CD84525DCA2A}{0F3F3735-573D-9804-99E4-AB2A69BA5FD4}'
+    $extensionParts = @()
+    if ($doForce) { $extensionParts += $cseSecuritySettings }
+    if ($doAudit) { $extensionParts += $cseAuditPolicy }
+
+    if ($extensionParts.Count -gt 0) {
+        $extensionNames = ($extensionParts | ForEach-Object { "[$_]" }) -join ''
+        $doExtensions = Confirm-Action -Title "Client-Side-Extensions in der GPO registrieren" `
+            -Description "Traegt im AD-Attribut 'gPCMachineExtensionNames' ein, dass die GPO Sicherheitseinstellungen- und/oder Audit-Richtlinien-Inhalt enthaelt. Zwingend noetig, sonst wird der oben geschriebene Inhalt vom Client ignoriert." `
+            -Command "AD-Attribut gPCMachineExtensionNames = $extensionNames"
+        if ($doExtensions) {
+            try {
+                $gpoExtEntry = [ADSI]"LDAP://CN={$($gpo.Id)},CN=Policies,CN=System,$domainDN"
+                $gpoExtEntry.psbase.Properties['gPCMachineExtensionNames'].Value = $extensionNames
+                $gpoExtEntry.psbase.CommitChanges()
+                Write-Log -Level RESULT -Message "gPCMachineExtensionNames gesetzt: $extensionNames"
+            } catch {
+                Write-Log -Level ERROR -Message "gPCMachineExtensionNames konnte nicht gesetzt werden: $($_.Exception.Message)"
+            }
+        }
+    }
+
     # --- Versionsnummer aktualisieren, damit DCs den neuen Inhalt erkennen ---
     $doVersion = Confirm-Action -Title "GPO-Version aktualisieren" `
         -Description "Erhoeht die Versionsnummer der GPO (GPT.INI + passendes AD-Attribut), damit Domaenencontroller den neuen Inhalt beim naechsten Sicherheitsrichtlinien-Refresh uebernehmen." `

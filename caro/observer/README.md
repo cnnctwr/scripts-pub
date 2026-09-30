@@ -364,15 +364,23 @@ wirkt ausschließlich lokal auf den Server, auf dem es läuft. Dieses Script
 schreibt dagegen in **geteilte, domänenweite Infrastruktur** (neue GPO,
 Verknüpfung mit einer OU) — mit entsprechend größerer Tragweite. Jeder
 Schritt wird einzeln im Klartext angezeigt und bestätigt, genau wie beim
-Hauptscript. Es wurde mangels eigener AD-Testumgebung nicht von mir gegen
-eine echte Domäne verifiziert — vor jedem produktiven Einsatz unbedingt in
-einer Testdomäne durchlaufen lassen und den erzeugten GPO-Inhalt zusätzlich
-in `gpmc.msc` gegenprüfen.
+Hauptscript. In einer Testdomäne verifiziert — trotzdem vor jedem
+produktiven Einsatz zuerst in einer eigenen Testdomäne durchlaufen lassen und
+den erzeugten GPO-Inhalt zusätzlich in `gpmc.msc` gegenprüfen.
 
 **Was die neue GPO enthält** (ausschließlich das, kein anderer Inhalt):
 
 - Sicherheitsoption „Unterkategorien erzwingen" (`SCENoApplyLegacyAuditPolicy`)
 - Dieselben 9 Audit-Unterkategorien wie das Hauptscript, auf „Erfolg" gesetzt
+- Registrierung der beiden zuständigen Client-Side-Extensions im AD-Attribut
+  `gPCMachineExtensionNames` — ohne diesen Eintrag ignoriert der
+  Group-Policy-Client den oben geschriebenen Inhalt vollständig, obwohl
+  Verknüpfung und Berechtigungen korrekt sind (beim ersten Testlauf so
+  gefunden: die GPO erschien nicht einmal unter „Angewendete
+  Gruppenrichtlinienobjekte"). Die beiden GUID-Paare sind feste,
+  windows-weit identische Kennungen — eine live verifiziert, die andere laut
+  offizieller Microsoft-Spezifikation
+  ([MS-GPAC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpac/ac9c8234-d2e8-455d-be76-f84244dd1e58)).
 
 ### Voraussetzungen (zusätzlich zu denen des Hauptscripts)
 
