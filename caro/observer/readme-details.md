@@ -196,6 +196,7 @@ erneut angewendet wird.
 | `-GPOCheck`              | switch  | `false`                    | Reiner Diagnose-Modus: prüft, ob eine bestehende Gruppenrichtlinie Audit-Richtlinien, „Unterkategorien erzwingen" oder die Event-Log-Readers-Gruppenmitgliedschaft verwaltet. Braucht kein `-ServiceAccount`. Nicht kombinierbar mit `-ReportOnly`/`-RestoreFrom`. Details siehe eigener Abschnitt unten. |
 | `-GPOCheckWaitMinutes`   | int     | `6`                         | Wartezeit für den aktiven Firewall-Persistenztest bei `-GPOCheck`. |
 | `-AutoApprove`           | switch  | `false`                    | Überspringt die Einzelbestätigung (weiterhin vollständig protokolliert). Nicht für den ersten Lauf empfohlen. |
+| `-Detailed`              | switch  | `false`                    | Zeigt im Terminal die vollständige Log-Ausgabe. Ohne den Schalter erscheint pro Einstellung nur eine Statuszeile (OK / Warnung / Fehler); Details stehen immer vollständig im Log. |
 
 ### `-DesiredSettingsFile` — Eingabe-JSON
 
@@ -429,6 +430,7 @@ den erzeugten GPO-Inhalt zusätzlich in `gpmc.msc` gegenprüfen.
 | `-RemoveGPO`      | switch | `false`                                     | Rückbau-Modus: löst Verknüpfung und löscht die GPO aus `-BackupFile`. Erfordert `-BackupFile`.            |
 | `-BackupFile`     | string | *(nicht gesetzt)*                          | Pfad zu einer `CARO-Observer-AuditGPO-Backup-*.json` eines früheren Erstellungslaufs. Nötig bei `-RemoveGPO`. |
 | `-AutoApprove`    | switch | `false`                                     | Überspringt die Einzelbestätigung. Angesichts der Tragweite (geteilte AD-Infrastruktur) nicht empfohlen.  |
+| `-Detailed`       | switch | `false`                                     | Zeigt im Terminal die vollständige Log-Ausgabe. Ohne den Schalter erscheint pro Schritt nur eine Statuszeile (OK / Warnung / Fehler); Details stehen immer vollständig im Log. |
 
 ### Erzeugte Dateien
 

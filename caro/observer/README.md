@@ -47,7 +47,16 @@ Hauptscript für die übrigen Bereiche:
 
 Beide Scripte nötig: Die GPO deckt ausschließlich die Audit-Richtlinien ab,
 das Hauptscript die übrigen fünf Bereiche (Event Log Readers, Security-Eventlog,
-SACL, Firewall).
+SACL, Firewall). Wird eine Audit-Einstellung nach dem Setzen zurückgesetzt,
+zeigt das Hauptscript direkt in der Statuszeile
+`WARNUNG (Wert weicht ab - Script: New-CAROObserverAuditGPO.ps1)`.
+
+## Terminal-Ausgabe
+
+Pro Einstellung eine Zeile: `Kategorie … OK` / `Bereits korrekt` /
+`Übersprungen` / `WARNUNG` / `FEHLER`, am Ende ein Gesamtergebnis. Die volle
+Ausgabe steht immer in der Log-Datei; mit `-Detailed` erscheint sie auch im
+Terminal.
 
 ### Pfad C — Konflikt bei Event Log Readers oder Firewall
 
@@ -88,6 +97,7 @@ Details: [readme-details.md](readme-details.md#rollback).
 | `-GPOCheck`              | switch  | `false`                    | Diagnose-Modus, siehe Entscheidungsbaum oben. Nicht kombinierbar mit `-ReportOnly`/`-RestoreFrom`. |
 | `-GPOCheckWaitMinutes`   | int     | `6`                         | Wartezeit für den aktiven Firewall-Persistenztest bei `-GPOCheck`. |
 | `-AutoApprove`           | switch  | `false`                    | Überspringt die Einzelbestätigung (weiterhin vollständig protokolliert). Nicht für den ersten Lauf empfohlen. |
+| `-Detailed`              | switch  | `false`                    | Zeigt im Terminal die vollständige Log-Ausgabe. Ohne den Schalter erscheint pro Einstellung nur eine Statuszeile (OK / Warnung / Fehler); Details stehen immer vollständig im Log. |
 
 ## Parameter — New-CAROObserverAuditGPO.ps1
 
@@ -100,6 +110,7 @@ Details: [readme-details.md](readme-details.md#rollback).
 | `-RemoveGPO`      | switch | `false`                                     | Rückbau-Modus: löst Verknüpfung und löscht die GPO aus `-BackupFile`. Erfordert `-BackupFile`.            |
 | `-BackupFile`     | string | *(nicht gesetzt)*                          | Pfad zu einer `CARO-Observer-AuditGPO-Backup-*.json` eines früheren Erstellungslaufs. Nötig bei `-RemoveGPO`. |
 | `-AutoApprove`    | switch | `false`                                     | Überspringt die Einzelbestätigung. Angesichts der Tragweite (geteilte AD-Infrastruktur) nicht empfohlen.  |
+| `-Detailed`       | switch | `false`                                     | Zeigt im Terminal die vollständige Log-Ausgabe. Ohne den Schalter erscheint pro Schritt nur eine Statuszeile (OK / Warnung / Fehler); Details stehen immer vollständig im Log. |
 
 ## Erzeugte Dateien — Set-CAROObserverPrerequisites.ps1
 

@@ -65,6 +65,11 @@
     Ueberspringt die Einzelbestaetigung (weiterhin vollstaendig protokolliert).
     Angesichts der Tragweite (geteilte AD-Infrastruktur) nicht empfohlen.
 
+.PARAMETER Detailed
+    Zeigt im Terminal die vollstaendige Log-Ausgabe. Ohne diesen Schalter
+    erscheint pro Schritt nur eine Statuszeile (OK / Warnung / Fehler);
+    die Details stehen immer vollstaendig in der Log-Datei.
+
 .EXAMPLE
     .\New-CAROObserverAuditGPO.ps1
 
@@ -89,7 +94,8 @@ param(
     [string]$OutputPath = (Join-Path -Path $PSScriptRoot -ChildPath 'CARO-Observer-Setup-Logs'),
     [switch]$RemoveGPO,
     [string]$BackupFile,
-    [switch]$AutoApprove
+    [switch]$AutoApprove,
+    [switch]$Detailed
 )
 
 if ($RemoveGPO -and -not $BackupFile) {
@@ -115,7 +121,10 @@ $stamp         = $scriptStart.ToString('yyyyMMdd-HHmmss')
 $LogFile       = Join-Path $OutputPath "CARO-Observer-AuditGPO_${hostName}_$stamp.log"
 $BackupOutFile = Join-Path $OutputPath "CARO-Observer-AuditGPO-Backup_${hostName}_$stamp.json"
 
-$script:ApproveAll = [bool]$AutoApprove
+$script:ApproveAll   = [bool]$AutoApprove
+$script:ErrorCount   = 0
+$script:WarningCount = 0
+$script:LastIssue    = ''
 
 function Write-Log {
     param(
@@ -124,6 +133,12 @@ function Write-Log {
     )
     $line = "[{0:yyyy-MM-dd HH:mm:ss}] [{1,-6}] {2}" -f (Get-Date), $Level, $Message
     Add-Content -Path $LogFile -Value $line -Encoding UTF8
+    if ($Level -eq 'ERROR') { $script:ErrorCount++;   $script:LastIssue = $Message }
+    if ($Level -eq 'WARN')  { $script:WarningCount++; $script:LastIssue = $Message }
+
+    # Terminal: ohne -Detailed nur Statuszeilen (Write-StatusLine); alles
+    # andere steht vollstaendig in der Log-Datei.
+    if (-not $Detailed) { return }
     switch ($Level) {
         'ERROR'  { Write-Host $line -ForegroundColor Red }
         'WARN'   { Write-Host $line -ForegroundColor Yellow }
@@ -131,6 +146,26 @@ function Write-Log {
         'RESULT' { Write-Host $line -ForegroundColor Green }
         default  { Write-Host $line }
     }
+}
+
+function Write-StatusLine {
+    param(
+        [Parameter(Mandatory)] [string]$Label,
+        [Parameter(Mandatory)] [ValidateSet('OK', 'Uebersprungen', 'WARNUNG', 'FEHLER')] [string]$Status,
+        [string]$Detail
+    )
+    $width = 52
+    $text = if ($Label.Length -gt ($width - 4)) { $Label.Substring(0, $width - 6) + '..' } else { $Label }
+    $dots = '.' * [Math]::Max(2, $width - $text.Length)
+    $color = switch ($Status) {
+        'OK'            { 'Green' }
+        'Uebersprungen' { 'DarkGray' }
+        'WARNUNG'       { 'Yellow' }
+        'FEHLER'        { 'Red' }
+    }
+    if ($Detail.Length -gt 90) { $Detail = $Detail.Substring(0, 87) + '...' }
+    $suffix = if ($Detail) { "  ($Detail)" } else { '' }
+    Write-Host "$text $dots $Status$suffix" -ForegroundColor $color
 }
 
 function Confirm-Action {
@@ -211,9 +246,13 @@ if ($RemoveGPO) {
             try {
                 Remove-GPLink -Guid $info.GpoGuid -Target $info.TargetOU -ErrorAction Stop | Out-Null
                 Write-Log -Level RESULT -Message "Verknuepfung entfernt."
+                Write-StatusLine -Label "Verknuepfung entfernen" -Status OK
             } catch {
                 Write-Log -Level WARN -Message "Verknuepfung konnte nicht entfernt werden (evtl. bereits geloest): $($_.Exception.Message)"
+                Write-StatusLine -Label "Verknuepfung entfernen" -Status WARNUNG -Detail "evtl. bereits geloest"
             }
+        } else {
+            Write-StatusLine -Label "Verknuepfung entfernen" -Status Uebersprungen
         }
 
         $doDelete = Confirm-Action -Title "GPO loeschen" `
@@ -223,12 +262,17 @@ if ($RemoveGPO) {
             try {
                 Remove-GPO -Guid $info.GpoGuid -ErrorAction Stop
                 Write-Log -Level RESULT -Message "GPO geloescht."
+                Write-StatusLine -Label "GPO loeschen" -Status OK
             } catch {
                 Write-Log -Level ERROR -Message "GPO konnte nicht geloescht werden: $($_.Exception.Message)"
+                Write-StatusLine -Label "GPO loeschen" -Status FEHLER -Detail $_.Exception.Message
             }
+        } else {
+            Write-StatusLine -Label "GPO loeschen" -Status Uebersprungen
         }
     } else {
         Write-Log -Level INFO -Message "Nichts zu tun - GPO existiert nicht (mehr)."
+        Write-StatusLine -Label "GPO loeschen" -Status Uebersprungen -Detail "GPO existiert nicht (mehr)"
     }
     #endregion
 } else {
@@ -259,11 +303,13 @@ if ($RemoveGPO) {
         -Command "New-GPO -Name '$GpoName'"
     if (-not $doCreate) {
         Write-Log -Level WARN -Message "Abgebrochen vor GPO-Erstellung."
+        Write-StatusLine -Label "GPO anlegen" -Status Uebersprungen -Detail "abgebrochen"
         exit 1
     }
 
     $gpo = New-GPO -Name $GpoName -Comment "Erstellt von New-CAROObserverAuditGPO.ps1 am $($scriptStart.ToString('yyyy-MM-dd HH:mm:ss')) - Audit-Voraussetzungen fuer CARO-AD-Observer (PDF 'Audit-Richtlinien konfigurieren')."
     Write-Log -Level RESULT -Message "GPO angelegt: '$($gpo.DisplayName)', GUID $($gpo.Id)."
+    Write-StatusLine -Label "GPO anlegen" -Status OK
 
     $domainDns = ($domainDN -split ',' | ForEach-Object { $_ -replace '^DC=', '' }) -join '.'
     $sysvolGpoPath = "\\$domainDns\SYSVOL\$domainDns\Policies\{$($gpo.Id)}"
@@ -287,6 +333,9 @@ if ($RemoveGPO) {
         )
         Set-Content -Path $gptTmplPath -Value $gptTmplContent -Encoding Unicode
         Write-Log -Level RESULT -Message "GptTmpl.inf geschrieben: $gptTmplPath"
+        Write-StatusLine -Label "Unterkategorien erzwingen (GPO-Inhalt)" -Status OK
+    } else {
+        Write-StatusLine -Label "Unterkategorien erzwingen (GPO-Inhalt)" -Status Uebersprungen
     }
 
     # --- Audit-Unterkategorien (audit.csv) ---
@@ -304,6 +353,9 @@ if ($RemoveGPO) {
         }
         Set-Content -Path $auditCsvPath -Value $csvLines -Encoding UTF8
         Write-Log -Level RESULT -Message "audit.csv geschrieben: $auditCsvPath ($($auditSubcategories.Count) Unterkategorien)."
+        Write-StatusLine -Label "9 Audit-Unterkategorien (GPO-Inhalt)" -Status OK
+    } else {
+        Write-StatusLine -Label "9 Audit-Unterkategorien (GPO-Inhalt)" -Status Uebersprungen
     }
 
     # --- Client-Side-Extensions registrieren (gPCMachineExtensionNames) ---
@@ -339,9 +391,13 @@ if ($RemoveGPO) {
                 $gpoExtEntry.psbase.Properties['gPCMachineExtensionNames'].Value = $extensionNames
                 $gpoExtEntry.psbase.CommitChanges()
                 Write-Log -Level RESULT -Message "gPCMachineExtensionNames gesetzt: $extensionNames"
+                Write-StatusLine -Label "Client-Side-Extensions registrieren" -Status OK
             } catch {
                 Write-Log -Level ERROR -Message "gPCMachineExtensionNames konnte nicht gesetzt werden: $($_.Exception.Message)"
+                Write-StatusLine -Label "Client-Side-Extensions registrieren" -Status FEHLER -Detail $_.Exception.Message
             }
+        } else {
+            Write-StatusLine -Label "Client-Side-Extensions registrieren" -Status Uebersprungen
         }
     }
 
@@ -369,9 +425,13 @@ if ($RemoveGPO) {
             $gpoEntry.psbase.Properties['versionNumber'].Value = [int]$newVersion
             $gpoEntry.psbase.CommitChanges()
             Write-Log -Level RESULT -Message "AD-Attribut versionNumber aktualisiert: $newVersion."
+            Write-StatusLine -Label "GPO-Version aktualisieren" -Status OK
         } catch {
             Write-Log -Level WARN -Message "AD-Attribut versionNumber konnte nicht gesetzt werden: $($_.Exception.Message) - GPO wird evtl. erst beim naechsten regulaeren Refresh vollstaendig erkannt."
+            Write-StatusLine -Label "GPO-Version aktualisieren" -Status WARNUNG -Detail "AD-Attribut nicht gesetzt - Details im Log"
         }
+    } else {
+        Write-StatusLine -Label "GPO-Version aktualisieren" -Status Uebersprungen
     }
 
     # --- Mit OU verknuepfen ---
@@ -384,9 +444,13 @@ if ($RemoveGPO) {
             New-GPLink -Guid $gpo.Id -Target $TargetOU -Order $GpoLinkOrder -LinkEnabled Yes -ErrorAction Stop | Out-Null
             Write-Log -Level RESULT -Message "GPO verknuepft mit '$TargetOU', Link-Prioritaet $GpoLinkOrder."
             $linked = $true
+            Write-StatusLine -Label "GPO mit OU verknuepfen" -Status OK
         } catch {
             Write-Log -Level ERROR -Message "Verknuepfung fehlgeschlagen: $($_.Exception.Message)"
+            Write-StatusLine -Label "GPO mit OU verknuepfen" -Status FEHLER -Detail $_.Exception.Message
         }
+    } else {
+        Write-StatusLine -Label "GPO mit OU verknuepfen" -Status Uebersprungen
     }
 
     $backupInfo = [pscustomobject]@{
@@ -410,4 +474,13 @@ if ($RemoveGPO) {
     #endregion
 }
 
-Write-Log -Level INFO -Message "Script beendet."
+Write-Log -Level INFO -Message "Script beendet. Fehler=$script:ErrorCount Warnungen=$script:WarningCount"
+
+Write-Host ""
+if ($script:ErrorCount -gt 0) {
+    Write-Host "GESAMTERGEBNIS: FEHLER ($script:ErrorCount Fehler, $script:WarningCount Warnungen) - Details in der Log-Datei: $LogFile" -ForegroundColor Red
+} elseif ($script:WarningCount -gt 0) {
+    Write-Host "GESAMTERGEBNIS: mit Warnungen ($script:WarningCount) - Details in der Log-Datei: $LogFile" -ForegroundColor Yellow
+} else {
+    Write-Host "GESAMTERGEBNIS: OK (Log: $LogFile)" -ForegroundColor Green
+}

@@ -102,6 +102,11 @@
     Ueberspringt die Einzelbestaetigung (weiterhin vollstaendig protokolliert).
     Nicht empfohlen fuer den ersten Lauf.
 
+.PARAMETER Detailed
+    Zeigt im Terminal die vollstaendige Log-Ausgabe. Ohne diesen Schalter
+    erscheint pro Einstellung nur eine Statuszeile (OK / Warnung / Fehler);
+    die Details stehen immer vollstaendig in der Log-Datei.
+
 .EXAMPLE
     .\Set-CAROObserverPrerequisites.ps1 -ServiceAccount "CUSATUM\sa-caro"
 
@@ -134,7 +139,8 @@ param(
     [switch]$GPOCheck,
     [ValidateRange(1, 60)]
     [int]$GPOCheckWaitMinutes = 6,
-    [switch]$AutoApprove
+    [switch]$AutoApprove,
+    [switch]$Detailed
 )
 
 $script:ActiveModeCount = 0
@@ -200,6 +206,8 @@ $script:BackupEntries = New-Object System.Collections.Generic.List[object]
 $script:ApproveAll    = [bool]$AutoApprove
 $script:ErrorCount    = 0
 $script:WarningCount  = 0
+$script:InSetting     = $false
+$script:LastIssue     = ''
 $script:DomainDN      = $null
 
 function Write-Log {
@@ -209,13 +217,41 @@ function Write-Log {
     )
     $line = "[{0:yyyy-MM-dd HH:mm:ss}] [{1,-6}] {2}" -f (Get-Date), $Level, $Message
     Add-Content -Path $LogFile -Value $line -Encoding UTF8
+    if ($Level -eq 'ERROR') { $script:ErrorCount++;   $script:LastIssue = $Message }
+    if ($Level -eq 'WARN')  { $script:WarningCount++; $script:LastIssue = $Message }
+
+    # Terminal: ohne -Detailed nur Statuszeilen. Innerhalb einer Einstellung
+    # (Invoke-CaroSetting) meldet der Wrapper das Ergebnis selbst; ausserhalb
+    # bleiben Warnungen, Fehler und Ergebnis-Zeilen sichtbar, INFO/STEP nicht.
+    $show = $Detailed -or (-not $script:InSetting -and $Level -in 'WARN', 'ERROR', 'RESULT')
+    if (-not $show) { return }
     switch ($Level) {
-        'ERROR'  { $script:ErrorCount++;   Write-Host $line -ForegroundColor Red }
-        'WARN'   { $script:WarningCount++; Write-Host $line -ForegroundColor Yellow }
+        'ERROR'  { Write-Host $line -ForegroundColor Red }
+        'WARN'   { Write-Host $line -ForegroundColor Yellow }
         'STEP'   { Write-Host $line -ForegroundColor Cyan }
         'RESULT' { Write-Host $line -ForegroundColor Green }
         default  { Write-Host $line }
     }
+}
+
+function Write-StatusLine {
+    param(
+        [Parameter(Mandatory)] [string]$Label,
+        [Parameter(Mandatory)] [ValidateSet('OK', 'Bereits korrekt', 'Uebersprungen', 'WARNUNG', 'FEHLER')] [string]$Status,
+        [string]$Detail
+    )
+    $width = 52
+    $text = if ($Label.Length -gt ($width - 4)) { $Label.Substring(0, $width - 6) + '..' } else { $Label }
+    $dots = '.' * [Math]::Max(2, $width - $text.Length)
+    $color = switch ($Status) {
+        'OK'              { 'Green' }
+        'Bereits korrekt' { 'Green' }
+        'Uebersprungen'   { 'DarkGray' }
+        'WARNUNG'         { 'Yellow' }
+        'FEHLER'          { 'Red' }
+    }
+    $suffix = if ($Detail) { "  ($Detail)" } else { '' }
+    Write-Host "$text $dots $Status$suffix" -ForegroundColor $color
 }
 
 function Add-BackupEntry {
@@ -284,7 +320,7 @@ function Confirm-Step {
     }
 }
 
-function Invoke-CaroSetting {
+function Invoke-CaroSettingCore {
     <#
       Generischer Motor: liest den aktuellen Wert (Def.Get), zeigt ihn zusammen
       mit dem Zielwert im Klartext an, fragt den Anwender, wendet bei Zustimmung
@@ -329,7 +365,7 @@ function Invoke-CaroSetting {
         Add-BackupEntry -Id $Def.Id -Title $Def.Title -Command $cmd `
             -OriginalValueRaw $current -OriginalValueDisplay $currentDisplay `
             -NewValueRaw $current -NewValueDisplay $currentDisplay -Status $status
-        return 'Reported'
+        if ($alreadyOk) { return 'ReportedOk' } else { return 'ReportedDiff' }
     }
 
     $title = if ($Mode -eq 'Restore') { "[ROLLBACK] $($Def.Title)" } else { $Def.Title }
@@ -381,6 +417,44 @@ function Invoke-CaroSetting {
             -NewValueRaw $null -NewValueDisplay 'FEHLER' -Status "Fehler: $($_.Exception.Message)"
         return 'Error'
     }
+}
+
+function Invoke-CaroSetting {
+    param(
+        [Parameter(Mandatory)] [hashtable]$Def,
+        [Parameter(Mandatory)] $TargetValue,
+        [Parameter(Mandatory)] [ValidateSet('Apply', 'Restore', 'Report')] [string]$Mode
+    )
+
+    $script:LastIssue = ''
+    $script:InSetting = $true
+    try {
+        $result = Invoke-CaroSettingCore -Def $Def -TargetValue $TargetValue -Mode $Mode
+    } finally {
+        $script:InSetting = $false
+    }
+
+    $label = if ($Mode -eq 'Restore') { "Rollback: $($Def.Title)" } else { $Def.Title }
+    $short = $script:LastIssue -replace '^\[[^\]]+\]\s*', ''
+    if ($short.Length -gt 90) { $short = $short.Substring(0, 87) + '...' }
+
+    # Audit-Werte, die nach dem Setzen abweichen, werden typischerweise von
+    # einer Gruppenrichtlinie zurueckgesetzt - dann hilft nur die dedizierte GPO.
+    $isAudit = ($Def.Id -like 'Audit-*') -or ($Def.Id -eq 'ForceSubcategoryPolicy')
+
+    switch ($result) {
+        'Changed'      { Write-StatusLine -Label $label -Status 'OK' }
+        'ReportedOk'   { Write-StatusLine -Label $label -Status 'OK' }
+        'AlreadyOk'    { Write-StatusLine -Label $label -Status 'Bereits korrekt' }
+        'Skipped'      { Write-StatusLine -Label $label -Status 'Uebersprungen' }
+        'ReportedDiff' { Write-StatusLine -Label $label -Status 'WARNUNG' -Detail 'weicht vom Ziel ab' }
+        'Mismatch'     {
+            $detail = if ($isAudit) { 'Wert weicht ab - Script: New-CAROObserverAuditGPO.ps1' } else { 'Wert nach Setzen abweichend' }
+            Write-StatusLine -Label $label -Status 'WARNUNG' -Detail $detail
+        }
+        'Error'        { Write-StatusLine -Label $label -Status 'FEHLER' -Detail $short }
+    }
+    return $result
 }
 #endregion
 
@@ -1202,7 +1276,7 @@ if ($GPOCheck) {
 
     Write-Host ""
     Write-Host "-- SACL --" -ForegroundColor Cyan
-    Write-Log -Level INFO -Message "SACL: Nicht betroffen - SACL ist eine AD-Objekteigenschaft, wird per AD-Replikation verteilt, nicht per Gruppenrichtlinien-Refresh ueberschrieben. Kein Test noetig."
+    Write-Log -Level RESULT -Message "SACL: Nicht betroffen - SACL ist eine AD-Objekteigenschaft, wird per AD-Replikation verteilt, nicht per Gruppenrichtlinien-Refresh ueberschrieben. Kein Test noetig."
 
     $firewallResults = Test-GpoFirewallPersistence -WaitMinutes $GPOCheckWaitMinutes
     Write-Host ""
@@ -1223,6 +1297,9 @@ if ($GPOCheck) {
     }
 
     $conflictCount = @($allFindings | Where-Object { $_.Status -eq 'Konflikt' }).Count
+    $auditConflict = @($allFindings | Where-Object { $_.Status -eq 'Konflikt' -and ($_.Bereich -like 'Audit:*' -or $_.Bereich -like 'Unterkategorien erzwingen*') }).Count -gt 0
+    $otherConflict = @($allFindings | Where-Object { $_.Status -eq 'Konflikt' -and $_.Bereich -notlike 'Audit:*' -and $_.Bereich -notlike 'Unterkategorien erzwingen*' }).Count -gt 0
+    $auditHint = "Audit-Richtlinien: dauerhaft loesbar mit .\New-CAROObserverAuditGPO.ps1 (legt eine eigene GPO an)."
 
     $reportLines = @()
     $reportLines += "CARO-AD-Observer - GPO-Konflikt-Check"
@@ -1238,7 +1315,9 @@ if ($GPOCheck) {
     if ($conflictCount -eq 0) {
         $reportLines += "GESAMTBEFUND: Keine Gruppenrichtlinien-Konflikte gefunden. Das Script kann wie in der README dokumentiert (Best Practice) ausgefuehrt werden."
     } else {
-        $reportLines += "GESAMTBEFUND: $conflictCount Bereich(e) werden von einer Gruppenrichtlinie ueberschrieben. Der normale Script-Lauf funktioniert kurzfristig, haelt dort aber NICHT dauerhaft. Zusaetzlich noetig: die betroffene(n) GPO(s) manuell um die fehlenden Werte ergaenzen (siehe Details oben) - danach haelt es zuverlaessig."
+        $reportLines += "GESAMTBEFUND: $conflictCount Bereich(e) werden von einer Gruppenrichtlinie ueberschrieben. Der normale Script-Lauf funktioniert kurzfristig, haelt dort aber NICHT dauerhaft."
+        if ($auditConflict) { $reportLines += "  -> $auditHint" }
+        if ($otherConflict) { $reportLines += "  -> Event Log Readers / Firewall: die betroffene(n) GPO(s) manuell um die fehlenden Werte ergaenzen (siehe Details oben)." }
     }
 
     $reportLines | Set-Content -Path $GpoCheckFile -Encoding UTF8
@@ -1250,6 +1329,8 @@ if ($GPOCheck) {
         Write-Host "Keine Gruppenrichtlinien-Konflikte gefunden - Script kann wie dokumentiert ausgefuehrt werden." -ForegroundColor Green
     } else {
         Write-Host "$conflictCount Bereich(e) mit Gruppenrichtlinien-Konflikt - siehe $GpoCheckFile fuer Details und naechste Schritte." -ForegroundColor Yellow
+        if ($auditConflict) { Write-Host "  -> $auditHint" -ForegroundColor Yellow }
+        if ($otherConflict) { Write-Host "  -> Event Log Readers / Firewall: betroffene GPO(s) manuell ergaenzen." -ForegroundColor Yellow }
     }
     Write-Host "Bericht: $GpoCheckFile"
     #endregion
@@ -1373,6 +1454,15 @@ if ($GPOCheck) {
 }
 
 Write-Log -Level INFO -Message "Script beendet. Fehler=$script:ErrorCount Warnungen=$script:WarningCount"
+
+Write-Host ""
+if ($script:ErrorCount -gt 0) {
+    Write-Host "GESAMTERGEBNIS: FEHLER ($script:ErrorCount Fehler, $script:WarningCount Warnungen) - Details in der Log-Datei." -ForegroundColor Red
+} elseif ($script:WarningCount -gt 0) {
+    Write-Host "GESAMTERGEBNIS: mit Warnungen ($script:WarningCount) - Details in der Log-Datei." -ForegroundColor Yellow
+} else {
+    Write-Host "GESAMTERGEBNIS: OK" -ForegroundColor Green
+}
 
 if ($script:ErrorCount -gt 0) { exit 1 } else { exit 0 }
 #endregion
