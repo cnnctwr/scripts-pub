@@ -77,22 +77,26 @@ Hilfe im Skript: `Get-Help .\CARO-ServiceAccount-Setup.ps1 -Full`
 
 1. **Startbanner:** Das Skript sagt, dass es auf dem CARO-Server laufen muss, und fragt, ob der erkannte Rechner der CARO-Server ist.
 2. **Voraussetzungen** werden geprüft.
-3. **Übersicht "Was kommt auf Sie zu":** alle Rollen, Funktionen und Zusatzbereiche, bevor etwas gefragt wird.
-4. **Profil:** `Voller CARO-Umfang` (alle Funktionen der Rollen) oder `Anpassen` (Funktionen je Rolle abwählen).
+3. **Übersicht "Was kommt auf Sie zu":** alle Bereiche mit ihren Funktionen und Rechten sowie die Zusatzbereiche, bevor etwas gefragt wird.
+4. **Profil:** `Voller CARO-Umfang` (alle Funktionen der Bereiche) oder `Anpassen` (Funktionen je Bereich abwählen).
 5. **Service-Account:** SamAccountName, Anzeigename, Beschreibung, OU, Kennwortstrategie. Existiert der Account schon, wird er angezeigt und es wird gefragt, ob er übernommen werden soll.
-6. **AD-Rollen und OUs:** je Rolle eine oder mehrere OUs (Schleife "Weitere OU hinzufügen?") oder die ganze Domäne. Optional schlägt das Skript aus einer Basis-OU die Unter-OUs vor.
+6. **AD-Bereiche und OUs:** Zu jedem Bereich zeigt das Skript **zuerst** die Funktionen mit dem dafür vergebenen Recht und fragt **danach**, ob CARO den Bereich nutzen soll.
+
+   Dann: je Bereich (Benutzerkonten, Gruppen, Bereinigung inaktiver Benutzer) eine oder mehrere OUs (Schleife "Weitere OU hinzufügen?") oder die ganze Domäne. Optional schlägt das Skript aus einer Basis-OU die Unter-OUs vor.
+
+   **OU-Eingabe ohne Domänenteil:** OUs werden ohne `DC=...` eingegeben, von der tiefsten OU nach oben, z. B. `OU=Service,OU=Accounts`. Das Skript ergänzt die Domäne automatisch (`OU=Service,OU=Accounts,DC=firma,DC=de`) und zeigt sie bei jeder Frage an. Wer den Domänenteil trotzdem mit eingibt, wird nicht gestört. Jede OU wird im AD geprüft; bei einem Tippfehler zeigt das Skript den vollständigen Namen, den es gesucht hat.
 7. **Attribut-Strategie** (wird immer ausdrücklich gefragt, siehe unten).
 8. **Exchange** und **Fileserver.**
-9. **Zustand prüfen** (nur lesend): Was besteht schon, was ist neu?
+9. **Zustand prüfen** (nur lesend): Was besteht schon, was ist neu? Bei einem **neuen** Account prüft das Skript bei den lokalen Gruppen nur, ob die Gruppe existiert, und listet ihre Mitglieder nicht auf (Windows protokolliert jede Auflistung als eigenes Sicherheitsereignis 4799). Nur bei einem übernommenen Account werden die Mitglieder gelesen.
 10. **Zusammenfassung** aller Aktionen. Config.json und Report.md werden geschrieben.
 
-## AD-Rollen und Rechte
+## Active Directory: Bereiche und Rechte
 
-Alle Delegationen gelten **pro OU inklusive aller Unter-OUs**. Verwaltet werden Benutzer und Gruppen. Computer-Objekte sind nicht Teil des Umfangs. Lesen braucht keine Delegation (Standard-AD).
+Das Skript fragt je Bereich, ob CARO ihn nutzen soll, und danach, in welchen OUs. Alle Rechte gelten **pro OU inklusive aller Unter-OUs**. Verwaltet werden Benutzer und Gruppen. Computer-Objekte sind nicht Teil des Umfangs. Lesen braucht keine Delegation (Standard-AD).
 
-#### Benutzer-OU
+#### Benutzerkonten
 
-OU, in der CARO Benutzer anlegt, löscht und ändert.
+CARO legt Benutzerkonten an, löscht sie und ändert sie.
 
 | Funktion | Wirkung und vergebenes Recht |
 |---|---|
@@ -105,9 +109,9 @@ OU, in der CARO Benutzer anlegt, löscht und ändert.
 | Ablaufdatum des Kontos bearbeiten | CARO darf das Ablaufdatum eines Kontos ändern (Schreiben von accountExpires). |
 | Benutzer verschieben | CARO darf Benutzer aus dieser OU in andere OUs verschieben, z. B. in die OU für deaktivierte Benutzer (Rechte: Löschen hier, Anlegen im Ziel). Das Ziel muss selbst eine angegebene OU sein. |
 
-#### Gruppen-OU
+#### Gruppen
 
-OU, in der die Berechtigungsgruppen liegen. CARO legt sie an, auch automatisch über Smart Permissions.
+CARO legt Gruppen an, z. B. Berechtigungsgruppen für Fileserver, und ändert deren Mitglieder. Das geschieht auch automatisch über Smart Permissions.
 
 | Funktion | Wirkung und vergebenes Recht |
 |---|---|
@@ -116,9 +120,9 @@ OU, in der die Berechtigungsgruppen liegen. CARO legt sie an, auch automatisch �
 | Gruppenmitglieder ändern | CARO darf Mitglieder zu Gruppen hinzufügen und entfernen (Recht: Write Members). |
 | Unter-OUs anlegen (Smart Permissions) | CARO darf in dieser OU weitere OUs anlegen und löschen, z. B. eine Unter-OU je Fileserver (Rechte: Create/Delete OU objects). |
 
-#### OU für deaktivierte Benutzer
+#### Bereinigung inaktiver Benutzer
 
-Ziel der Bereinigung: Benutzer, die sich x Tage nicht angemeldet haben, werden hierher verschoben und nach weiteren x Tagen gelöscht.
+Der CARO-Baustein zur Bereinigung verschiebt Benutzer, die sich x Tage nicht angemeldet haben, in eine eigene OU und löscht sie dort nach weiteren x Tagen.
 
 | Funktion | Wirkung und vergebenes Recht |
 |---|---|
@@ -126,16 +130,15 @@ Ziel der Bereinigung: Benutzer, die sich x Tage nicht angemeldet haben, werden h
 | Benutzer löschen | CARO darf dort Benutzer löschen (Baustein "Deaktivierte Benutzer in einer OU löschen"). |
 | Konto deaktivieren | CARO darf dort Konten deaktivieren (Schreiben von userAccountControl). |
 
-#### Weitere Gruppen-OU nur für Mitgliederpflege
+#### Weitere Gruppen für neue Benutzer
 
-Optional: OU mit Gruppen außerhalb der Gruppen-OU, in die CARO neue Benutzer beim Anlegen automatisch einträgt.
+Optional: Gruppen außerhalb der oben genannten Gruppen-OU, in die CARO neue Benutzer beim Anlegen automatisch einträgt. Dort darf CARO nur Mitglieder ändern.
 
 | Funktion | Wirkung und vergebenes Recht |
 |---|---|
 | Gruppenmitglieder ändern | CARO darf nur Mitglieder hinzufügen und entfernen (Recht: Write Members). Kein Anlegen oder Löschen von Gruppen. |
 
-
-**Domänenweit:** Statt einer OU kann die ganze Domäne gewählt werden. Das Skript warnt dann ausdrücklich und verlangt bei Rollen mit Anlegen, Löschen oder Verschieben von Benutzern eine zweite Bestätigung.
+**Domänenweit:** Statt einer OU kann die ganze Domäne gewählt werden. Das Skript warnt dann ausdrücklich und verlangt bei Bereichen mit Anlegen, Löschen oder Verschieben von Benutzern eine zweite Bestätigung.
 
 **Wichtig zur OU-Auswahl:** Ein CARO-Scan läuft über die ganze Domäne, **ändern** kann CARO aber nur dort, wo der Account Rechte hat. Nicht durchführbare Änderungen werden von CARO dokumentiert.
 
@@ -168,7 +171,11 @@ Das Skript prüft, ob die Rollengruppe existiert, und trägt den Account mit `Ad
 | Lesen | `Backup Operators` (S-1-5-32-551), `Print Operators` (S-1-5-32-550) | Berechtigungen und Freigaben (Share-Permissions) auslesen |
 | Verwalten | zusätzlich `Administrators` (S-1-5-32-544) | Ordner anlegen und löschen, Besitzer ändern, Vererbung schalten, Zugriffsrechte ändern |
 
-Einzelrechte pro Ordner (Traverse, Berechtigungen ändern) reichen für den vollen Umfang nicht aus und werden nicht umgesetzt. Gruppen werden über ihre SID angesprochen, nicht über den (sprachabhängigen) Namen.
+Einzelrechte pro Ordner (Traverse, Berechtigungen ändern) reichen für den vollen Umfang nicht aus und werden nicht umgesetzt.
+
+### Domänencontroller als Zielrechner
+
+Ist der CARO-Server oder ein Fileserver zugleich ein **Domänencontroller** (z. B. in einer Testumgebung, in der alles auf einem Rechner läuft), warnt das Skript ausdrücklich, **verweigert aber nichts**. Auf einem Domänencontroller sind die „lokalen“ Gruppen **Domänengruppen** (Container Builtin) und gelten für die ganze Domäne. Der Service-Account hätte dann praktisch Domänenadministrator-Rechte (Administrators), dürfte Dateien und Registrierung der Domänencontroller sichern und wiederherstellen (Backup Operators) und Druckertreiber laden (Print Operators). Die Warnung steht in der Zusammenfassung des Plans, im Report und noch einmal vor der Bestätigung bei Apply. In der Praxis sollten CARO-Server und Fileserver keine Domänencontroller sein. Gruppen werden über ihre SID angesprochen, nicht über den (sprachabhängigen) Namen.
 
 ## Kennwort
 
@@ -206,7 +213,7 @@ Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser
 Invoke-Pester .\tests
 ```
 
-Die Tests prüfen unter anderem, dass diese README jeden Parameter, jeden Modus, jede Ausgabedatei und jede Rolle und Funktion des Katalogs nennt. Sie prüfen außerdem, dass die Einzeldatei in `dist` aktuell, reines ASCII und ohne weitere Dateien startfähig ist.
+Die Tests prüfen unter anderem, dass diese README jeden Parameter, jeden Modus, jede Ausgabedatei und jeden Bereich und jede Funktion des Katalogs nennt. Sie prüfen außerdem, dass die Einzeldatei in `dist` aktuell, reines ASCII und ohne weitere Dateien startfähig ist.
 
 ## Bekannte Grenzen und ungeprüfte Punkte
 
@@ -214,6 +221,7 @@ Die Tests prüfen unter anderem, dass diese README jeden Parameter, jeden Modus,
 - **Verschieben von Benutzern:** Die genauen AD-Rechte (Löschen im Quell-OU, Anlegen im Ziel-OU) sind nach Microsoft-Standard abgeleitet und noch nicht gegen ein echtes AD getestet. Alle Rechte stehen in `src\Private\03-Catalog.ps1` und können dort angepasst werden.
 - **Exchange Read-Only:** Es ist nicht belegt, ob die Rolle für alle CARO-Analysen reicht.
 - Das Anlegen und Löschen von Unter-OUs (Smart Permissions) wird nur auf Wunsch vergeben.
+- **CARO-Observer:** Er zeigt nach bisherigem Eindruck die Zeit, zu der er ein Ereignis **eingelesen** hat, nicht unbedingt die Zeit, zu der es passiert ist. Die tatsächliche Reihenfolge der Aktionen steht im Apply-Log und in der Ereignisanzeige des Domänencontrollers.
 - Windows PowerShell 5.1: Die .ps1-Dateien in `src` müssen als UTF-8 mit BOM gespeichert bleiben (sonst werden Umlaute falsch gelesen). Die Einzeldatei in `dist` ist reines ASCII und davon nicht betroffen. Beides prüfen Tests.
 
 ## Projektstruktur

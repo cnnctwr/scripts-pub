@@ -1,6 +1,6 @@
 # CARO-ServiceAccount-Setup.ps1 - Einzeldatei-Fassung (nicht von Hand bearbeiten)
 # Erzeugt aus src/ mit scripts/build_single_file.py. Der Hash dient nur der Aktualitaetspruefung.
-# Quell-Hash: 350e2d135b3305fa9288f627ac04c4f14ff1284488e1159b01b1ec08aa66c997
+# Quell-Hash: bbfb7fe9bf2c82d55c34433946ae4f55bdb809119738a48e60d139ec9e383585
 <#
 .SYNOPSIS
     Legt einen Service-Account fuer die CARO-Suite an und vergibt die dafuer noetigen Rechte.
@@ -449,15 +449,16 @@ function New-CaroFunction {
     return [pscustomobject]@{ Key = $Key; Title = $Title; Explain = $Explain; Specs = @($Specs) }
 }
 
-# Die vier AD-Rollen mit ihren Funktionen.
+# Die vier AD-Bereiche (intern "Rollen") mit ihren Funktionen.
 function Get-CaroRoleCatalog {
     $roles = @()
 
     $roles += [pscustomobject]@{
         Key        = 'UserOU'
-        Title      = 'Benutzer-OU'
-        Purpose    = 'OU, in der CARO Benutzer anlegt, loescht und aendert.'
-        Question   = 'In welcher OU (oder welchen OUs) liegen die Benutzer, die CARO verwalten soll?'
+        Title      = 'Benutzerkonten'
+        Purpose    = 'CARO legt Benutzerkonten an, loescht sie und aendert sie.'
+        Ask        = 'Soll CARO Benutzerkonten in Active Directory verwalten duerfen (mit den oben genannten Rechten)?'
+        Question   = 'In welcher OU (oder welchen OUs) liegen die Benutzerkonten, die CARO verwalten soll bzw. in denen neue Benutzer angelegt werden?'
         BaseSuffix = 'Benutzer'
         Functions  = @(
             (New-CaroFunction -Key 'CreateUser' -Title 'Benutzer anlegen' `
@@ -489,9 +490,10 @@ function Get-CaroRoleCatalog {
 
     $roles += [pscustomobject]@{
         Key        = 'GroupOU'
-        Title      = 'Gruppen-OU'
-        Purpose    = 'OU, in der die Berechtigungsgruppen liegen. CARO legt sie an, auch automatisch ueber Smart Permissions.'
-        Question   = 'In welcher OU (oder welchen OUs) liegen bzw. entstehen die Berechtigungsgruppen?'
+        Title      = 'Gruppen'
+        Purpose    = 'CARO legt Gruppen an, z. B. Berechtigungsgruppen fuer Fileserver, und aendert deren Mitglieder. Das geschieht auch automatisch ueber Smart Permissions.'
+        Ask        = 'Soll CARO Gruppen in Active Directory verwalten duerfen (mit den oben genannten Rechten)?'
+        Question   = 'In welcher OU (oder welchen OUs) liegen bzw. entstehen die Gruppen?'
         BaseSuffix = 'Gruppen'
         Functions  = @(
             (New-CaroFunction -Key 'CreateGroup' -Title 'Gruppen anlegen, umbenennen und aendern' `
@@ -511,9 +513,10 @@ function Get-CaroRoleCatalog {
 
     $roles += [pscustomobject]@{
         Key        = 'DisabledUserOU'
-        Title      = 'OU fuer deaktivierte Benutzer'
-        Purpose    = 'Ziel der Bereinigung: Benutzer, die sich x Tage nicht angemeldet haben, werden hierher verschoben und nach weiteren x Tagen geloescht.'
-        Question   = 'Welche OU nimmt die verschobenen (inaktiven bzw. deaktivierten) Benutzer auf?'
+        Title      = 'Bereinigung inaktiver Benutzer'
+        Purpose    = 'Der CARO-Baustein zur Bereinigung verschiebt Benutzer, die sich x Tage nicht angemeldet haben, in eine eigene OU und loescht sie dort nach weiteren x Tagen.'
+        Ask        = 'Nutzen Sie diese Bereinigung (CARO bekommt dafuer die oben genannten Rechte)?'
+        Question   = 'Welche OU nimmt die verschobenen Benutzer auf?'
         BaseSuffix = 'Deaktivierte Benutzer'
         Functions  = @(
             (New-CaroFunction -Key 'ReceiveUsers' -Title 'Benutzer aufnehmen (Verschieben hierher)' `
@@ -530,8 +533,9 @@ function Get-CaroRoleCatalog {
 
     $roles += [pscustomobject]@{
         Key        = 'MembershipOU'
-        Title      = 'Weitere Gruppen-OU nur fuer Mitgliederpflege'
-        Purpose    = 'Optional: OU mit Gruppen ausserhalb der Gruppen-OU, in die CARO neue Benutzer beim Anlegen automatisch eintraegt.'
+        Title      = 'Weitere Gruppen fuer neue Benutzer'
+        Purpose    = 'Optional: Gruppen ausserhalb der oben genannten Gruppen-OU, in die CARO neue Benutzer beim Anlegen automatisch eintraegt. Dort darf CARO nur Mitglieder aendern.'
+        Ask        = ''
         Question   = 'In welcher OU (oder welchen OUs) liegen diese Gruppen?'
         BaseSuffix = ''
         Functions  = @(
@@ -900,7 +904,7 @@ function New-CaroActionList {
                 [void]$actions.Add((New-CaroAction -Type 'GrantAd' -Area 'Active Directory' `
                             -What ('Recht vergeben: ' + (Get-CaroSpecTitle -Spec $spec)) `
                             -Where ($target + ' (inklusive aller Unter-OUs)') `
-                            -Why ('Rolle "{0}". Benoetigt fuer: {1}.' -f $role.Title, (@($spec.Functions) -join ', ')) `
+                            -Why ('Bereich "{0}". Benoetigt fuer: {1}.' -f $role.Title, (@($spec.Functions) -join ', ')) `
                             -Params @{ TargetDn = $target; Role = $role.Key; Spec = $specParam }))
             }
         }
@@ -909,6 +913,31 @@ function New-CaroActionList {
     $list = @($actions)
     for ($i = 0; $i -lt $list.Count; $i++) { $list[$i].Id = 'A{0:000}' -f ($i + 1) }
     return $list
+}
+
+# Warnung fuer Zielrechner, die Domaenencontroller sind. Dort sind die "lokalen" Gruppen Domaenengruppen (Container Builtin).
+# Das Skript arbeitet trotzdem weiter, es weist nur ausdruecklich darauf hin.
+function Get-CaroDomainControllerWarnings {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Actions,
+        [string[]]$DomainControllers = @()
+    )
+    $consequence = @{
+        'S-1-5-32-544' = 'Administrators (damit hat der Account praktisch Domaenenadministrator-Rechte)'
+        'S-1-5-32-551' = 'Backup Operators (darf Dateien und Registrierung der Domaenencontroller sichern und wiederherstellen)'
+        'S-1-5-32-550' = 'Print Operators (darf auf Domaenencontrollern Druckertreiber laden)'
+    }
+    $warnings = @()
+    foreach ($dc in $DomainControllers) {
+        $sids = @()
+        foreach ($a in $Actions) {
+            if ($a.Type -eq 'AddLocalGroupMember' -and $a.Params.ComputerLabel -ieq $dc -and $sids -notcontains $a.Params.GroupSid) { $sids += $a.Params.GroupSid }
+        }
+        if ($sids.Count -eq 0) { continue }
+        $groups = @($sids | ForEach-Object { if ($consequence.ContainsKey($_)) { $consequence[$_] } else { $_ } })
+        $warnings += ("{0} ist ein Domaenencontroller. Dort sind die 'lokalen' Gruppen Domaenengruppen (Container Builtin) und gelten fuer die ganze Domaene. Der Account wird Mitglied von: {1}. In der Praxis sollten CARO-Server und Fileserver keine Domaenencontroller sein. Das Skript arbeitet trotzdem weiter." -f $dc, ($groups -join '; '))
+    }
+    return $warnings
 }
 
 # Rechte-Zusammenfassung je Rolle fuer Uebersicht und Report.
@@ -1146,6 +1175,31 @@ function Test-CaroDnFormat {
     return ($Dn -match '^(OU|CN|DC)=[^,]+(,(OU|CN|DC)=[^,]+)*$')
 }
 
+# Ergaenzt den Domaenenteil: "OU=Service,OU=Accounts" wird zu "OU=Service,OU=Accounts,DC=firma,DC=de".
+# Wer den Domaenenteil schon mit angibt (DC=...), dessen Eingabe bleibt unveraendert.
+function ConvertTo-CaroOuDn {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$DomainDn
+    )
+    $t = ($Text.Trim() -replace '\s*,\s*', ',')
+    if ($t -match '(^|,)DC=') { return $t }
+    return ('{0},{1}' -f $t, $DomainDn)
+}
+
+# Kuerzt einen Distinguished Name um den Domaenenteil (fuer die Anzeige als Vorschlag).
+function ConvertTo-CaroShortOu {
+    param(
+        [Parameter(Mandatory = $true)][string]$Dn,
+        [Parameter(Mandatory = $true)][string]$DomainDn
+    )
+    $suffix = ',' + $DomainDn
+    if ($Dn.EndsWith($suffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $Dn.Substring(0, $Dn.Length - $suffix.Length)
+    }
+    return $Dn
+}
+
 # Liefert den Distinguished Name einer vorhandenen OU (oder eines Containers bzw. der Domaene), sonst $null.
 function Get-CaroOuDn {
     param([Parameter(Mandatory = $true)][string]$Dn)
@@ -1157,6 +1211,26 @@ function Get-CaroOuDn {
     catch { return $null }
 }
 
+# Ist der Rechner ein Domaenencontroller? Frage an AD, daher ohne Remoting auch fuer Fileserver moeglich.
+function Test-CaroDomainController {
+    param([Parameter(Mandatory = $true)][string]$Computer)
+    $name = $Computer
+    if ($Computer -eq '.') { $name = [System.Environment]::MachineName }
+    try { $null = Get-ADDomainController -Identity $name -ErrorAction Stop; return $true }
+    catch { return $false }
+}
+
+# Welche der Zielrechner (CARO-Server, Fileserver) sind Domaenencontroller?
+function Find-CaroDomainControllers {
+    param([Parameter(Mandatory = $true)][object[]]$Actions)
+    $names = @($Actions | Where-Object { $_.Type -eq 'AddLocalGroupMember' } | ForEach-Object { $_.Params.ComputerLabel } | Select-Object -Unique)
+    $found = @()
+    foreach ($n in $names) {
+        if (Test-CaroDomainController -Computer $n) { $found += $n }
+    }
+    return $found
+}
+
 # Sucht einen vorhandenen Account ueber den SamAccountName.
 function Get-CaroExistingAccount {
     param([Parameter(Mandatory = $true)][string]$Sam)
@@ -1165,6 +1239,8 @@ function Get-CaroExistingAccount {
 
 # Wird lokal oder per WinRM auf dem Zielserver ausgefuehrt. Arbeitet mit der SID, nicht mit dem Gruppennamen,
 # damit es auf deutschen und englischen Systemen gleich funktioniert.
+# Operation 'Exists' prueft nur, ob die Gruppe vorhanden ist. Sie listet die Mitglieder NICHT auf, denn Windows
+# protokolliert jede Auflistung als eigenes Sicherheitsereignis (4799).
 $script:CaroLocalGroupScript = {
     param([string]$GroupSid, [string]$MemberPath, [string]$Operation)
     $result = @{ Status = ''; Message = '' }
@@ -1173,18 +1249,29 @@ $script:CaroLocalGroupScript = {
         $sidObj = New-Object System.Security.Principal.SecurityIdentifier($GroupSid)
         $groupName = $sidObj.Translate([System.Security.Principal.NTAccount]).Value.Split('\')[-1]
         $group = [ADSI]("WinNT://./{0},group" -f $groupName)
-        $members = @()
-        foreach ($m in @($group.Invoke('Members'))) {
-            $members += $m.GetType().InvokeMember('AdsPath', 'GetProperty', $null, $m, $null)
-        }
+        $null = $group.Name
     }
     catch {
         $result.Status = 'GroupMissing'
         $result.Message = 'Die lokale Gruppe mit der SID {0} ist auf diesem Server nicht vorhanden oder nicht lesbar: {1}' -f $GroupSid, $_.Exception.Message
         return $result
     }
+    if ($Operation -eq 'Exists') {
+        $result.Status = 'Exists'
+        return $result
+    }
     $isMember = $false
-    foreach ($m in $members) { if ($m -ieq $MemberPath) { $isMember = $true } }
+    try {
+        foreach ($m in @($group.Invoke('Members'))) {
+            $path = $m.GetType().InvokeMember('AdsPath', 'GetProperty', $null, $m, $null)
+            if ($path -ieq $MemberPath) { $isMember = $true }
+        }
+    }
+    catch {
+        $result.Status = 'Error'
+        $result.Message = 'Die Mitglieder der Gruppe konnten nicht gelesen werden: ' + $_.Exception.Message
+        return $result
+    }
     try {
         switch ($Operation) {
             'Test' {
@@ -1213,7 +1300,7 @@ function Invoke-CaroLocalGroup {
         [Parameter(Mandatory = $true)][string]$Computer,
         [Parameter(Mandatory = $true)][string]$GroupSid,
         [Parameter(Mandatory = $true)][string]$Sam,
-        [Parameter(Mandatory = $true)][ValidateSet('Test', 'Add', 'Remove')][string]$Operation
+        [Parameter(Mandatory = $true)][ValidateSet('Exists', 'Test', 'Add', 'Remove')][string]$Operation
     )
     $dom = Get-CaroDomainInfo
     $path = 'WinNT://{0}/{1}' -f $dom.NetBios, $Sam
@@ -1466,7 +1553,7 @@ function Show-CaroOverview {
     Write-CaroMessage -Message 'Dieses Skript legt einen Service-Account fuer CARO an und vergibt die Rechte, die CARO fuer den vollen Funktionsumfang braucht.' -Level 'INFO'
     Write-CaroMessage -Message 'Rechte in Active Directory gelten nur in den OUs, die Sie angeben, inklusive aller Unter-OUs.' -Level 'INFO'
     Write-Host ''
-    Write-CaroMessage -Message '1) AD-Rollen: je Rolle geben Sie eine oder mehrere OUs an.' -Level 'TITLE'
+    Write-CaroMessage -Message '1) Active Directory: Je Bereich geben Sie die OU(s) an, in denen CARO arbeiten darf.' -Level 'TITLE'
     foreach ($role in (Get-CaroRoleCatalog)) {
         Write-Host ''
         Write-Host ('   {0}' -f $role.Title) -ForegroundColor White
@@ -1505,6 +1592,42 @@ function Get-CaroParentDn {
     param([Parameter(Mandatory = $true)][string]$Dn)
     if ($Dn -match '^(?:\\.|[^,\\])+,(.*)$') { return $Matches[1] }
     return ''
+}
+
+# Fragt eine OU (oder mehrere) ab. Eingabe OHNE Domaenenteil, von der tiefsten OU nach oben, z. B. OU=Service,OU=Accounts.
+# Die Domaene wird automatisch ergaenzt. Liefert die geprueften, vollstaendigen Distinguished Names.
+function Read-CaroOuInput {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prompt,
+        [string]$DefaultDn = '',
+        [switch]$Multiple,
+        [switch]$AllowEmpty
+    )
+    $dom = Get-CaroDomainInfo
+    Write-CaroMessage -Message ('Eingabe ohne Domaenenteil, von der tiefsten OU nach oben, z. B. OU=Service,OU=Accounts. Die Domaene {0} ({1}) wird automatisch ergaenzt.' -f $dom.DnsRoot, $dom.Dn) -Level 'INFO'
+    if ($Multiple) { Write-CaroMessage -Message 'Mehrere OUs koennen mit Semikolon getrennt eingegeben werden.' -Level 'INFO' }
+    $default = ''
+    if ($DefaultDn) { $default = ConvertTo-CaroShortOu -Dn $DefaultDn -DomainDn $dom.Dn }
+    $validator = {
+        param($v)
+        $parts = @($v -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if (-not $Multiple -and $parts.Count -gt 1) { return 'Bitte nur eine OU angeben.' }
+        foreach ($part in $parts) {
+            $full = ConvertTo-CaroOuDn -Text $part -DomainDn $dom.Dn
+            if (-not (Test-CaroDnFormat -Dn $full)) { return ("'{0}' ist keine gueltige OU-Angabe. Beispiel: OU=Service,OU=Accounts (ohne DC-Teil)" -f $part) }
+            if (-not (Get-CaroOuDn -Dn $full)) { return ("Die OU '{0}' wurde im AD nicht gefunden." -f $full) }
+        }
+        return $null
+    }
+    $answer = Read-CaroText -Prompt $Prompt -Default $default -Validator $validator -AllowEmpty:$AllowEmpty
+    $result = @()
+    foreach ($part in ($answer -split ';')) {
+        $t = $part.Trim()
+        if (-not $t) { continue }
+        $canon = Get-CaroOuDn -Dn (ConvertTo-CaroOuDn -Text $t -DomainDn $dom.Dn)
+        if ($result -notcontains $canon) { $result += $canon }
+    }
+    return $result
 }
 
 # Account-Daten abfragen, einschliesslich Umgang mit einem bereits vorhandenen Account.
@@ -1554,14 +1677,7 @@ function Read-CaroAccountSettings {
 
     $result.DisplayName = Read-CaroText -Prompt 'Anzeigename' -Default $sam
     $result.Description = Read-CaroText -Prompt 'Beschreibung' -Default 'Service-Account fuer CARO-Suite'
-    $ouValidator = {
-        param($v)
-        if (-not (Test-CaroDnFormat -Dn $v)) { return 'Das ist kein gueltiger Distinguished Name, z. B. OU=Service,OU=Accounts,DC=firma,DC=de' }
-        if (-not (Get-CaroOuDn -Dn $v)) { return 'Diese OU wurde im AD nicht gefunden.' }
-        return $null
-    }
-    $ou = Read-CaroText -Prompt 'OU, in der der Account angelegt wird (Distinguished Name)' -Validator $ouValidator
-    $result.TargetOu = Get-CaroOuDn -Dn $ou
+    $result.TargetOu = @(Read-CaroOuInput -Prompt 'OU, in der der Account angelegt wird')[0]
 
     $pwOptions = @(
         [pscustomobject]@{ Key = '1'; Label = 'Kennwort generieren'; Explain = "Ein starkes Zufallskennwort wird erzeugt und genau EINMAL am Bildschirm angezeigt.`nSie tragen es danach in CARO bzw. Ihren Passwort-Tresor ein." },
@@ -1579,30 +1695,33 @@ function Read-CaroAccountSettings {
 # Basis-OU fuer Vorschlaege (optional).
 function Read-CaroBaseOu {
     Write-Host ''
-    Write-CaroMessage -Message 'Optional: Wenn alle CARO-OUs unter einer gemeinsamen OU liegen (z. B. OU=CARO,DC=firma,DC=de), schlage ich die Unter-OUs "Benutzer", "Gruppen" und "Deaktivierte Benutzer" vor.' -Level 'INFO'
-    $validator = {
-        param($v)
-        if (-not (Test-CaroDnFormat -Dn $v)) { return 'Das ist kein gueltiger Distinguished Name.' }
-        if (-not (Get-CaroOuDn -Dn $v)) { return 'Diese OU wurde im AD nicht gefunden.' }
-        return $null
-    }
-    $base = Read-CaroText -Prompt 'Basis-OU (Enter = keine)' -AllowEmpty -Validator $validator
-    if (-not $base) { return '' }
-    return (Get-CaroOuDn -Dn $base)
+    Write-CaroMessage -Message 'Optional: Wenn alle CARO-OUs unter einer gemeinsamen OU liegen (z. B. OU=CARO), schlage ich die Unter-OUs "Benutzer", "Gruppen" und "Deaktivierte Benutzer" vor.' -Level 'INFO'
+    $base = @(Read-CaroOuInput -Prompt 'Basis-OU (Enter = keine)' -AllowEmpty)
+    if ($base.Count -eq 0) { return '' }
+    return $base[0]
 }
 
-# Nummernauswahl aus einer Liste (Anpassen-Profil). Liefert die gewaehlten Schluessel.
+# Zeigt die Funktionen eines Bereichs mit Erklaerung und dem dafuer vergebenen Recht.
+function Show-CaroFunctionList {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Functions,
+        [switch]$Numbered
+    )
+    $i = 0
+    foreach ($f in $Functions) {
+        $i++
+        if ($Numbered) { $mark = '[{0}]' -f $i } else { $mark = '-' }
+        Write-Host ('  {0} {1}' -f $mark, $f.Title) -ForegroundColor White
+        Write-Host ('      {0}' -f $f.Explain) -ForegroundColor Gray
+    }
+}
+
+# Nummernauswahl aus einer zuvor angezeigten, nummerierten Liste (Anpassen-Profil). Liefert die gewaehlten Schluessel.
 function Read-CaroFunctionSelection {
     param(
         [Parameter(Mandatory = $true)][object[]]$Functions
     )
     while ($true) {
-        $i = 0
-        foreach ($f in $Functions) {
-            $i++
-            Write-Host ('  [{0}] {1}' -f $i, $f.Title) -ForegroundColor White
-            Write-Host ('      {0}' -f $f.Explain) -ForegroundColor Gray
-        }
         $answer = (Read-CaroInput -Prompt 'Nummern der gewuenschten Funktionen, getrennt durch Komma (Enter = alle)').Trim()
         if (-not $answer) { return @($Functions | ForEach-Object { $_.Key }) }
         $keys = @()
@@ -1637,12 +1756,12 @@ function Read-CaroOuTargets {
     )
     $dom = Get-CaroDomainInfo
     while ($true) {
-        $scope = Read-CaroChoice -Title ('{0}: Wo sollen die Rechte gelten?' -f $role.Title) -Options $options -Default '1'
+        $scope = Read-CaroChoice -Title ('{0}: Wo darf CARO arbeiten?' -f $role.Title) -Options $options -Default '1'
         if ($scope -eq '2') {
             Write-CaroMessage -Message ('Sie waehlen die ganze Domaene ({0}).' -f $dom.Dn) -Level 'WARN'
             $ok = Read-CaroYesNo -Prompt 'Wirklich fuer die ganze Domaene?' -Default $false
             if ($ok -and $Dangerous) {
-                Write-CaroMessage -Message 'Diese Rolle enthaelt Anlegen, Loeschen oder Verschieben von Benutzern. Domaenenweit kann CARO dann jedes Benutzerkonto der Domaene loeschen.' -Level 'WARN'
+                Write-CaroMessage -Message 'Dieser Bereich enthaelt Anlegen, Loeschen oder Verschieben von Benutzern. Domaenenweit kann CARO dann jedes Benutzerkonto der Domaene loeschen.' -Level 'WARN'
                 $ok = Read-CaroYesNo -Prompt 'Das gilt wirklich fuer die gesamte Domaene?' -Default $false
             }
             if (-not $ok) { continue }
@@ -1657,25 +1776,10 @@ function Read-CaroOuTargets {
         $cand = 'OU={0},{1}' -f $role.BaseSuffix, $BaseOu
         if (Get-CaroOuDn -Dn $cand) { $default = $cand }
     }
-    $validator = {
-        param($v)
-        foreach ($part in ($v -split ';')) {
-            $dn = $part.Trim()
-            if (-not $dn) { continue }
-            if (-not (Test-CaroDnFormat -Dn $dn)) { return ("'{0}' ist kein gueltiger Distinguished Name, z. B. OU=Benutzer,OU=CARO,DC=firma,DC=de" -f $dn) }
-            if (-not (Get-CaroOuDn -Dn $dn)) { return ("Die OU '{0}' wurde im AD nicht gefunden." -f $dn) }
-        }
-        return $null
-    }
     Write-CaroMessage -Message $role.Question -Level 'INFO'
-    Write-CaroMessage -Message 'Mehrere OUs koennen mit Semikolon getrennt eingegeben werden.' -Level 'INFO'
     while ($true) {
-        $answer = Read-CaroText -Prompt 'OU (Distinguished Name)' -Default $default -Validator $validator
-        foreach ($part in ($answer -split ';')) {
-            $dn = $part.Trim()
-            if (-not $dn) { continue }
-            $canon = Get-CaroOuDn -Dn $dn
-            if ($targets -notcontains $canon) { $targets += $canon }
+        foreach ($dn in @(Read-CaroOuInput -Prompt 'OU' -DefaultDn $default -Multiple)) {
+            if ($targets -notcontains $dn) { $targets += $dn }
         }
         $default = ''
         Write-CaroMessage -Message ('Bisher fuer {0}: {1}' -f $role.Title, ($targets -join '; ')) -Level 'INFO'
@@ -1687,7 +1791,7 @@ function Read-CaroOuTargets {
 # Fragt alle AD-Rollen ab.
 function Read-CaroRoleSettings {
     param([Parameter(Mandatory = $true)][string]$Profile)
-    Write-CaroHeading -Text 'ACTIVE DIRECTORY: ROLLEN UND OUs'
+    Write-CaroHeading -Text 'ACTIVE DIRECTORY: WO DARF CARO ARBEITEN?'
     $baseOu = Read-CaroBaseOu
     $roles = @{}
     $subOus = $false
@@ -1695,35 +1799,37 @@ function Read-CaroRoleSettings {
     foreach ($role in (Get-CaroRoleCatalog)) {
         Write-Host ''
         Write-Host ('-' * 78) -ForegroundColor DarkCyan
-        Write-CaroMessage -Message ('Rolle: {0}' -f $role.Title) -Level 'TITLE'
+        Write-CaroMessage -Message $role.Title.ToUpper() -Level 'TITLE'
         Write-CaroMessage -Message $role.Purpose -Level 'INFO'
 
         if ($role.Key -eq 'MembershipOU') {
             $uo = $roles['UserOU']
             if (-not $uo -or -not $uo.Enabled -or (@($uo.Functions) -notcontains 'CreateUser')) { continue }
-            if (-not (Read-CaroYesNo -Prompt 'Sollen neue Benutzer beim Anlegen automatisch in Gruppen eingetragen werden, die AUSSERHALB der Gruppen-OU liegen?' -Default $false)) {
-                $roles[$role.Key] = @{ Enabled = $false; Targets = @(); DomainWide = $false; Functions = @() }
-                continue
-            }
-        }
-        else {
-            if (-not (Read-CaroYesNo -Prompt ('Soll CARO die Rolle "{0}" nutzen?' -f $role.Title) -Default $true)) {
-                $roles[$role.Key] = @{ Enabled = $false; Targets = @(); DomainWide = $false; Functions = @() }
-                continue
-            }
         }
 
+        # Erst zeigen, was CARO dafuer bekommt, danach fragen: Die Zuordnung steht direkt vor der Frage.
         $selectable = @($role.Functions | Where-Object { $_.Key -ne 'SubOus' })
+        Write-Host ''
+        Write-CaroMessage -Message 'Dafuer bekommt der Service-Account diese Rechte:' -Level 'INFO'
+        Show-CaroFunctionList -Functions $selectable -Numbered:($Profile -eq 'Custom')
+        Write-Host ''
+
+        if ($role.Key -eq 'MembershipOU') {
+            $ask = 'Sollen neue Benutzer beim Anlegen automatisch in Gruppen eingetragen werden, die AUSSERHALB der Gruppen-OU liegen (mit den oben genannten Rechten)?'
+            $use = Read-CaroYesNo -Prompt $ask -Default $false
+        }
+        else {
+            $use = Read-CaroYesNo -Prompt $role.Ask -Default $true
+        }
+        if (-not $use) {
+            $roles[$role.Key] = @{ Enabled = $false; Targets = @(); DomainWide = $false; Functions = @() }
+            continue
+        }
+
         if ($Profile -eq 'Custom') {
-            Write-CaroMessage -Message 'Welche Funktionen soll CARO in dieser Rolle haben?' -Level 'INFO'
             $keys = @(Read-CaroFunctionSelection -Functions $selectable)
         }
         else {
-            Write-CaroMessage -Message 'Rechte in dieser Rolle (voller CARO-Umfang):' -Level 'INFO'
-            foreach ($f in $selectable) {
-                Write-Host ('  - {0}' -f $f.Title) -ForegroundColor White
-                Write-Host ('      {0}' -f $f.Explain) -ForegroundColor Gray
-            }
             $keys = @($selectable | ForEach-Object { $_.Key })
         }
 
@@ -1880,10 +1986,15 @@ function Add-CaroPlanState {
                     if ($existing) { $a.PlanState = 'Vorhanden' } else { $a.PlanState = 'Neu' }
                 }
                 'AddLocalGroupMember' {
-                    $r = Invoke-CaroLocalGroup -Computer $a.Params.Computer -GroupSid $a.Params.GroupSid -Sam $sam -Operation 'Test'
+                    # Neuer Account: kann noch in keiner Gruppe sein, deshalb nur die Gruppe pruefen und die Mitglieder
+                    # nicht auflisten (Windows protokolliert jede Auflistung als Sicherheitsereignis).
+                    $op = 'Test'
+                    if (-not $existing) { $op = 'Exists' }
+                    $r = Invoke-CaroLocalGroup -Computer $a.Params.Computer -GroupSid $a.Params.GroupSid -Sam $sam -Operation $op
                     switch ($r.Status) {
                         'IsMember' { $a.PlanState = 'Vorhanden' }
                         'NotMember' { $a.PlanState = 'Neu' }
+                        'Exists' { $a.PlanState = 'Neu' }
                         'GroupMissing' {
                             $a.PlanState = 'Gruppe fehlt'
                             [void]$warnings.Add(('{0}: {1}' -f $a.Where, $r.Message))
@@ -1926,8 +2037,8 @@ function Invoke-CaroPlan {
     Show-CaroOverview
 
     $profileOptions = @(
-        [pscustomobject]@{ Key = '1'; Label = 'Voller CARO-Umfang (empfohlen)'; Explain = "Alle Funktionen der oben gezeigten Rollen. Die Rechte gelten nur in den OUs, die Sie angeben." },
-        [pscustomobject]@{ Key = '2'; Label = 'Anpassen'; Explain = "Sie waehlen je Rolle einzelne Funktionen. Fuer Fortgeschrittene." }
+        [pscustomobject]@{ Key = '1'; Label = 'Voller CARO-Umfang (empfohlen)'; Explain = "Alle Funktionen der oben gezeigten Bereiche. Die Rechte gelten nur in den OUs, die Sie angeben." },
+        [pscustomobject]@{ Key = '2'; Label = 'Anpassen'; Explain = "Sie waehlen je Bereich einzelne Funktionen. Fuer Fortgeschrittene." }
     )
     $p = Read-CaroChoice -Title 'Welches Profil moechten Sie verwenden?' -Options $profileOptions -Default '1'
     if ($p -eq '1') { $profileName = 'Full' } else { $profileName = 'Custom' }
@@ -1968,7 +2079,14 @@ function Invoke-CaroPlan {
 
     Write-CaroHeading -Text 'ZUSTAND PRUEFEN (nur lesend)'
     $actions = New-CaroActionList -Settings $settings
-    $warnings = Add-CaroPlanState -Actions $actions -Settings $settings
+    $warnings = @(Add-CaroPlanState -Actions $actions -Settings $settings)
+    try {
+        $dcs = @(Find-CaroDomainControllers -Actions $actions)
+        $warnings += @(Get-CaroDomainControllerWarnings -Actions $actions -DomainControllers $dcs)
+    }
+    catch {
+        Write-CaroLog -Level 'WARN' -Message ('Domaenencontroller-Pruefung nicht moeglich: {0}' -f $_.Exception.Message)
+    }
     $config = New-CaroConfig -Settings $settings -Actions $actions -Warnings $warnings
 
     Write-CaroHeading -Text 'ZUSAMMENFASSUNG DES PLANS'
@@ -2186,6 +2304,10 @@ function Invoke-CaroApply {
 
     Write-CaroHeading -Text 'ZUSAMMENFASSUNG: DAS WIRD GEAENDERT'
     Show-CaroActionSummary -Actions $actions
+    if (@($config.Warnings).Count -gt 0) {
+        Write-Host ''
+        foreach ($w in @($config.Warnings)) { Write-CaroMessage -Message ('WARNUNG: {0}' -f $w) -Level 'WARN' }
+    }
     Write-Host ''
     if ($DryRun) {
         Write-CaroMessage -Message 'WhatIf ist aktiv: Es wird nichts geaendert. Die Result-Datei zeigt, was ausgefuehrt wuerde.' -Level 'WARN'
