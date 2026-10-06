@@ -1,6 +1,6 @@
 # CARO-ServiceAccount-Setup.ps1 - Einzeldatei-Fassung (nicht von Hand bearbeiten)
 # Erzeugt aus src/ mit scripts/build_single_file.py. Der Hash dient nur der Aktualitaetspruefung.
-# Quell-Hash: 60dcb918c75b202f9aae435ab8ddfbd8394bbd1a3dfdce21561b7b2d464eda25
+# Quell-Hash: bcccab49a0d8aec4ad0cf709d8d1be006e8f5db442313e4ffd47c9eb6c401c53
 <#
 .SYNOPSIS
     Legt einen Service-Account fuer die CARO-Suite an und vergibt die dafuer noetigen Rechte.
@@ -1675,7 +1675,11 @@ function Show-CaroBanner {
     Write-Host ''
     Write-CaroMessage -Message 'WICHTIG: Dieses Skript muss auf dem CARO-SERVER ausgefuehrt werden.' -Level 'WARN'
     Write-CaroMessage -Message ('Erkannter Rechner: {0}' -f [System.Environment]::MachineName) -Level 'WARN'
-    Write-CaroMessage -Message 'Der Service-Account wird in die lokalen Administratoren DIESES Rechners eingetragen.' -Level 'INFO'
+    switch ($Mode) {
+        'Plan' { Write-CaroMessage -Message 'Bedient der Account Active Directory, Fileserver oder Exchange, wird er bei Apply in die lokalen Administratoren DIESES Rechners eingetragen. Der Plan selbst aendert nichts.' -Level 'INFO' }
+        'Apply' { Write-CaroMessage -Message 'Bedient der Account Active Directory, Fileserver oder Exchange, wird er in die lokalen Administratoren DIESES Rechners eingetragen.' -Level 'INFO' }
+        'Rollback' { Write-CaroMessage -Message 'Der Rueckbau entfernt nur, was der gewaehlte Apply-Lauf neu angelegt hat, gegebenenfalls auch den Eintrag in den lokalen Administratoren dieses Rechners. Es wird nichts hinzugefuegt.' -Level 'INFO' }
+    }
     Write-Host ''
     return (Read-CaroYesNo -Prompt ('Ist {0} der CARO-Server?' -f [System.Environment]::MachineName) -Default $false)
 }
@@ -2256,7 +2260,10 @@ function Confirm-CaroArea {
     )
     while ($true) {
         $r = & $Read
-        if ($r -is [System.Collections.IDictionary] -and $r.Contains('Abort') -and $r.Abort) { return $r }
+        if ($r -is [System.Collections.IDictionary]) {
+            if ($r.Contains('Abort') -and $r.Abort) { return $r }
+            if ($r.Contains('ChangeKind') -and $r.ChangeKind) { return $r }
+        }
         if ($Summary) {
             Write-Host ''
             & $Summary $r
@@ -2290,7 +2297,8 @@ function Read-CaroSqlAccountSettings {
 function Read-CaroDatabaseSettings {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Windows', 'Sql')][string]$AccountKind,
-        [Parameter(Mandatory = $true)][string]$AccountSam
+        [Parameter(Mandatory = $true)][string]$AccountSam,
+        [switch]$CanChangeKind
     )
     Write-CaroHeading -Text 'DATENBANK (SQL SERVER)'
     Write-CaroMessage -Message 'CARO schreibt seine Daten in eine SQL-Datenbank. Dieses Konto bekommt dafuer die noetigen Rechte. Server, Instanz und Datenbankname tragen Sie spaeter im CARO-Configurator ein.' -Level 'INFO'
@@ -2357,6 +2365,12 @@ function Read-CaroDatabaseSettings {
                     $info = Get-CaroSqlRightsInfo -Server $server -Instance $instance
                     if ($info.Sysadmin) {
                         Write-CaroMessage -Message ('Verbunden als {0} (sysadmin).' -f $info.LoginName) -Level 'OK'
+                        if ($AccountKind -eq 'Sql' -and (Test-CaroSqlWindowsOnly -Server $server -Instance $instance)) {
+                            $kind = 'authmode'
+                            $problem = 'Dieser SQL-Server erlaubt nur die Windows-Authentifizierung. Ein SQL-Konto (mit Kennwort) kann sich dort nicht anmelden.'
+                            if ($CanChangeKind) { $problem += ' Waehlen Sie unten "Zurueck zur Kontoart" und dort "Windows-Konto". Ein Windows-Konto funktioniert immer.' }
+                            else { $problem += ' Ein Windows-Konto funktioniert dagegen immer: Starten Sie den Plan neu und waehlen Sie "Windows-Konto".' }
+                        }
                     }
                     else {
                         $kind = 'rights'
@@ -2377,6 +2391,8 @@ function Read-CaroDatabaseSettings {
                 if ($kind -eq 'connection') { $actions += @{ Id = 'retry'; Label = 'Server und Instanz neu eingeben' } }
                 $actions += @{ Id = 'back'; Label = 'Andere Option waehlen (zurueck zu den Rechten)' }
                 $actions += @{ Id = 'script'; Label = 'SQL-Datei fuer den DBA erzeugen' }
+                if ($kind -eq 'authmode' -and $CanChangeKind) { $actions += @{ Id = 'kind'; Label = 'Zurueck zur Kontoart (Windows-Konto waehlen)' } }
+                if ($kind -eq 'authmode') { $actions += @{ Id = 'continue'; Label = 'Trotzdem fortfahren (der Server muss spaeter auf den gemischten Modus umgestellt werden)' } }
                 $actions += @{ Id = 'abort'; Label = 'Abbrechen' }
                 $opts = @()
                 $n = 0
@@ -2384,6 +2400,8 @@ function Read-CaroDatabaseSettings {
                 $c = Read-CaroChoice -Title 'Was moechten Sie tun?' -Options $opts
                 $act = $actions[[int]$c - 1].Id
                 if ($act -eq 'retry') { continue }
+                if ($act -eq 'kind') { return @{ ChangeKind = $true } }
+                if ($act -eq 'continue') { break }
                 if ($act -eq 'abort') { return @{ Abort = $true } }
                 if ($act -eq 'back') { $back = $true; break }
                 $mode = 'DbaScript'
@@ -2439,21 +2457,37 @@ function Invoke-CaroPlan {
 
     # Konto: AD-Konto (Windows) oder, bei einem reinen Datenbank-Account, wahlweise ein SQL-Konto
     $dbOnly = ($areas.Count -eq 1 -and $hasDb)
-    $accountKind = 'Windows'
-    if ($dbOnly) {
-        $kindOptions = @(
-            [pscustomobject]@{ Key = '1'; Label = 'Windows-Konto'; Explain = 'Ein neues AD-Konto, das Zugriff auf den SQL-Server bekommt.' },
-            [pscustomobject]@{ Key = '2'; Label = 'SQL-Konto'; Explain = 'Ein SQL-Login mit Kennwort, ohne AD-Konto.' }
-        )
-        $kk = Read-CaroChoice -Title 'Welche Art von Konto soll CARO fuer die Datenbank verwenden?' -Options $kindOptions -Default '1'
-        if ($kk -eq '2') { $accountKind = 'Sql' }
+    $database = @{ Enabled = $false }
+    $dbDone = $false
+    $dbSummary = {
+        param($r)
+        Write-CaroMessage -Message ('Datenbank: {0}-Konto, {1}, Vergabe: {2} {3} {4}' -f $r.AccountType, $r.Right, $r.Mode, $r.SqlServer, $r.DbName) -Level 'INFO'
     }
-    $defaultSam = Get-CaroDefaultAccountName -Areas $areas
-    if ($accountKind -eq 'Sql') {
-        $account = Read-CaroSqlAccountSettings -DefaultName $defaultSam
-    }
-    else {
-        $account = Read-CaroAccountSettings -DefaultSam $defaultSam
+    while ($true) {
+        $accountKind = 'Windows'
+        if ($dbOnly) {
+            $kindOptions = @(
+                [pscustomobject]@{ Key = '1'; Label = 'Windows-Konto'; Explain = 'Ein neues AD-Konto, das Zugriff auf den SQL-Server bekommt.' },
+                [pscustomobject]@{ Key = '2'; Label = 'SQL-Konto'; Explain = 'Ein SQL-Login mit Kennwort, ohne AD-Konto. Der SQL-Server muss SQL-Anmeldungen erlauben.' }
+            )
+            $kk = Read-CaroChoice -Title 'Welche Art von Konto soll CARO fuer die Datenbank verwenden?' -Options $kindOptions -Default '1'
+            if ($kk -eq '2') { $accountKind = 'Sql' }
+        }
+        $defaultSam = Get-CaroDefaultAccountName -Areas $areas
+        if ($accountKind -eq 'Sql') {
+            $account = Read-CaroSqlAccountSettings -DefaultName $defaultSam
+        }
+        else {
+            $account = Read-CaroAccountSettings -DefaultSam $defaultSam
+        }
+        if (-not $dbOnly) { break }
+
+        # Reiner Datenbank-Account: den Datenbank-Bereich gleich hier abfragen, damit der Admin zur Kontoart zurueckkehren kann
+        $database = Confirm-CaroArea -Read { Read-CaroDatabaseSettings -AccountKind $accountKind -AccountSam $account.Sam -CanChangeKind } -Summary $dbSummary
+        if ($database.Abort) { return $null }
+        if ($database.ChangeKind) { continue }
+        $dbDone = $true
+        break
     }
 
     # Active Directory
@@ -2517,13 +2551,9 @@ function Invoke-CaroPlan {
         }
     }
 
-    # Datenbank
-    $database = @{ Enabled = $false }
-    if ($hasDb) {
-        $database = Confirm-CaroArea -Read { Read-CaroDatabaseSettings -AccountKind $accountKind -AccountSam $account.Sam } -Summary {
-            param($r)
-            Write-CaroMessage -Message ('Datenbank: {0}-Konto, {1}, Vergabe: {2} {3} {4}' -f $r.AccountType, $r.Right, $r.Mode, $r.SqlServer, $r.DbName) -Level 'INFO'
-        }
+    # Datenbank (zusammen mit anderen Bereichen; ein reiner Datenbank-Account wurde schon oben abgefragt)
+    if ($hasDb -and -not $dbDone) {
+        $database = Confirm-CaroArea -Read { Read-CaroDatabaseSettings -AccountKind $accountKind -AccountSam $account.Sam } -Summary $dbSummary
         if ($database.Abort) { return $null }
     }
 
@@ -3192,6 +3222,16 @@ function Get-CaroSqlRightsInfo {
     }
 }
 
+# Erlaubt der SQL-Server nur die Windows-Authentifizierung? Dann kann sich ein SQL-Konto (mit Kennwort) nicht anmelden.
+function Test-CaroSqlWindowsOnly {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = ''
+    )
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query "SELECT SERVERPROPERTY('IsIntegratedSecurityOnly') AS V")
+    return ($r.Count -gt 0 -and [int]$r[0].V -eq 1)
+}
+
 # Konten mit sysadmin, soweit sie fuer das angemeldete Konto sichtbar sind (ohne Rechte ist die Sicht oft eingeschraenkt).
 function Get-CaroSqlSysadmins {
     param(
@@ -3373,6 +3413,9 @@ function New-CaroSqlScriptText {
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine('-- CARO Service-Account: SQL-Rechte (erzeugt von CARO-ServiceAccount-Setup.ps1)')
     [void]$sb.AppendLine('-- Bitte mit einem Konto ausfuehren, das im SQL-Server sysadmin ist.')
+    if ($Params.AccountType -eq 'Sql') {
+        [void]$sb.AppendLine('-- Hinweis: Ein SQL-Konto kann sich nur anmelden, wenn der Server auf "SQL Server- und Windows-Authentifizierung" (gemischter Modus) steht.')
+    }
     [void]$sb.AppendLine('USE [master];')
     [void]$sb.AppendLine('GO')
     if ($Params.Right -eq 'DbOwner' -and $Params.CreateDatabase) {
