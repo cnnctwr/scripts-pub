@@ -8,7 +8,7 @@ Das Skript führt interaktiv durch alle Entscheidungen. Zu jeder Option steht vo
 
 ## Teststatus
 
-Die Logik ohne Zielsystem (Aktionsliste, Rechte-Bausteine, Config-Prüfung, Report, Eingaben, Log) hat automatische Tests (Pester). **Der Lauf gegen ein echtes Active Directory, Exchange und Fileserver wurde noch nicht durchgeführt.** Bitte zuerst `-Mode Plan` und danach `-Mode Apply -WhatIf` auf dem CARO-Server ausprobieren, dann erst echt anwenden.
+Die Logik ohne Zielsystem (Aktionsliste, Rechte-Bausteine, Config-Prüfung, Report, Eingaben, Log) hat automatische Tests (Pester). **Der Lauf gegen ein echtes Active Directory, Exchange, Fileserver und einen SQL-Server wurde noch nicht durchgeführt.** Bitte zuerst `-Mode Plan` und danach `-Mode Apply -WhatIf` auf dem CARO-Server ausprobieren, dann erst echt anwenden.
 
 ## Voraussetzungen
 
@@ -21,6 +21,7 @@ Die Logik ohne Zielsystem (Aktionsliste, Rechte-Bausteine, Config-Prüfung, Repo
 | Der Ausführende darf Konten anlegen und AD-Delegationen setzen | z. B. Domänenadministrator |
 | Nur bei Exchange: Exchange Management Tools bzw. Management Shell | muss `Add-RoleGroupMember` bereitstellen |
 | Nur bei Fileservern: WinRM erreichbar und Rechte, lokale Gruppen dort zu ändern | |
+| Nur beim Datenbank-Konto, wenn das Skript die SQL-Rechte selbst vergibt: Verbindung zum SQL-Server (TCP) und `sysadmin`-Rechte des ausführenden Admins | Ohne diese Rechte bietet das Skript eine SQL-Datei für den DBA an. |
 
 Fehlt eine Voraussetzung, **bricht das Skript ab**. Es simuliert nichts.
 
@@ -78,65 +79,83 @@ Hilfe im Skript: `Get-Help .\CARO-ServiceAccount-Setup.ps1 -Full`
 1. **Startbanner:** Das Skript sagt, dass es auf dem CARO-Server laufen muss, und fragt, ob der erkannte Rechner der CARO-Server ist.
 2. **Voraussetzungen** werden geprüft.
 3. **Übersicht "Was kommt auf Sie zu":** alle Bereiche mit ihren Funktionen und Rechten sowie die Zusatzbereiche, bevor etwas gefragt wird.
-4. **Profil:** `Voller CARO-Umfang` (alle Funktionen der Bereiche) oder `Anpassen` (Funktionen je Bereich abwählen).
-5. **Service-Account:** SamAccountName, Anzeigename, Beschreibung, OU, Kennwortstrategie. Existiert der Account schon, wird er angezeigt und es wird gefragt, ob er übernommen werden soll.
-6. **AD-Bereiche und OUs:** Zu jedem Bereich zeigt das Skript **zuerst** die Funktionen mit dem dafür vergebenen Recht und fragt **danach**, ob CARO den Bereich nutzen soll.
-
-   Dann: je Bereich (Benutzerkonten, Gruppen, Bereinigung inaktiver Benutzer) eine oder mehrere OUs (Schleife "Weitere OU hinzufügen?") oder die ganze Domäne. Optional schlägt das Skript aus einer Basis-OU die Unter-OUs vor.
+4. **Bereiche des Accounts:** freie Mehrfachauswahl (siehe unten). Danach wird nur noch abgefragt, was gewählt wurde.
+5. **Profil** (nur bei Active Directory): `Voller CARO-Umfang` (alle Funktionen der Bereiche) oder `Anpassen` (Funktionen je Bereich abwählen).
+6. **Service-Account:** SamAccountName, Anzeigename, Beschreibung, OU, Kennwortstrategie. Existiert der Account schon, wird er angezeigt und es wird gefragt, ob er übernommen werden soll. Bei einem reinen Datenbank-Account kann es stattdessen ein SQL-Konto sein.
+7. **AD-Bereiche und OUs:** Je Bereich (Benutzerkonten, Gruppen, Bereinigung inaktiver Benutzer, Weitere Gruppen für neue Benutzer) nennt das Skript in einem Satz, was CARO tut, und fragt dann **„Wo darf CARO das tun?“**: [1] in bestimmten OUs (schließt alle untergeordneten OUs ein), [2] in der ganzen Domäne oder [3] gar nicht. Bei [1] fragt es „In welcher OU soll das erfolgen?“ und wiederholt die Frage („Weitere OU hinzufügen?“), solange du weitere OUs angeben willst. Danach zeigt es als Bestätigung, welche Rechte der Service-Account dort bekommt (deutscher Name und Windows-Begriff).
 
    **OU-Eingabe ohne Domänenteil:** OUs werden ohne `DC=...` eingegeben, von der tiefsten OU nach oben, z. B. `OU=Service,OU=Accounts`. Das Skript ergänzt die Domäne automatisch (`OU=Service,OU=Accounts,DC=firma,DC=de`) und zeigt sie bei jeder Frage an. Wer den Domänenteil trotzdem mit eingibt, wird nicht gestört. Jede OU wird im AD geprüft. Bei einem Tippfehler zeigt das Skript den vollständigen Namen, den es gesucht hat, und nennt die Unter-OUs der übergeordneten OU. Ist das Objekt zwar vorhanden, aber eine **Gruppe** (oder ein anderer Objekttyp), sagt das Skript das ausdrücklich: Dort lassen sich keine Benutzer verschieben, es wird eine OU oder ein Container gebraucht. OUs beginnen mit `OU=`, nur Container wie `CN=Users` und Gruppen beginnen mit `CN=`.
-7. **Attribut-Strategie** (wird immer ausdrücklich gefragt, siehe unten).
-8. **Exchange** und **Fileserver.**
-9. **Zustand prüfen** (nur lesend): Was besteht schon, was ist neu? Bei einem **neuen** Account prüft das Skript bei den lokalen Gruppen nur, ob die Gruppe existiert, und listet ihre Mitglieder nicht auf (Windows protokolliert jede Auflistung als eigenes Sicherheitsereignis 4799). Nur bei einem übernommenen Account werden die Mitglieder gelesen.
-10. **Zusammenfassung** aller Aktionen. Config.json und Report.md werden geschrieben.
+8. **Attribut-Strategie** (wird immer ausdrücklich gefragt, siehe unten).
+9. **Exchange**, **Fileserver** und **Datenbank**, soweit gewählt.
+10. **Zustand prüfen** (nur lesend): Was besteht schon, was ist neu? Bei einem **neuen** Account prüft das Skript bei den lokalen Gruppen nur, ob die Gruppe existiert, und listet ihre Mitglieder nicht auf (Windows protokolliert jede Auflistung als eigenes Sicherheitsereignis 4799). Nur bei einem übernommenen Account werden die Mitglieder gelesen.
+11. **Zusammenfassung** aller Aktionen. Config.json und Report.md werden geschrieben.
+
+Am Ende **jedes Bereichs** (Active Directory, Exchange, Fileserver, Datenbank) fragt das Skript: „Diese Angaben übernehmen?“ Bei „Nein“ wird nur dieser Bereich noch einmal abgefragt. So lässt sich eine Eingabe korrigieren, ohne neu zu starten.
+
+## Für welche Bereiche ist ein Account?
+
+Zu Beginn wählst du frei, für welche Bereiche der Account gelten soll, mit Nummern, durch Komma getrennt (Enter = 1,2,3):
+
+| Nr. | Bereich |
+|---|---|
+| 1 | Active Directory |
+| 2 | Fileserver |
+| 3 | Exchange |
+| 4 | Datenbank (SQL Server) |
+
+Der vorgeschlagene Kontoname ist `sa-caro` plus ein Kürzel je Bereich in fester Reihenfolge: `ad` (Active Directory), `fs` (Fileserver), `ex` (Exchange), `db` (Datenbank). Beispiele: `sa-caro-ad`, `sa-caro-db`, `sa-caro-adfs`, `sa-caro-adfsex`. Enter übernimmt den Vorschlag, du kannst ihn überschreiben.
+
+Jede Kombination geht, zum Beispiel `4` für einen reinen Datenbank-Account, `1,2` für AD und Fileserver oder `1,2,3,4` für alles in einem Account. Für weitere Accounts rufst du das Skript erneut auf.
+
+Die Mitgliedschaft in den **lokalen Administratoren des CARO-Servers** bekommt nur ein Account, der AD, Fileserver oder Exchange bedient. Ein reiner Datenbank-Account bekommt sie nicht.
 
 ## Active Directory: Bereiche und Rechte
 
-Das Skript fragt je Bereich, ob CARO ihn nutzen soll, und danach, in welchen OUs. Alle Rechte gelten **pro OU inklusive aller Unter-OUs**. Verwaltet werden Benutzer und Gruppen. Computer-Objekte sind nicht Teil des Umfangs. Lesen braucht keine Delegation (Standard-AD).
+Je Bereich fragt das Skript, wo CARO das tun darf: in bestimmten OUs, in der ganzen Domäne oder gar nicht. Alle Rechte gelten **pro OU inklusive aller Unter-OUs**. Verwaltet werden Benutzer und Gruppen. Computer-Objekte sind nicht Teil des Umfangs. Lesen braucht keine Delegation (Standard-AD).
 
 #### Benutzerkonten
 
 CARO legt Benutzerkonten an, löscht sie und ändert sie.
 
-| Funktion | Wirkung und vergebenes Recht |
+| Funktion | Windows-Recht |
 |---|---|
-| Benutzer anlegen | CARO darf in dieser OU neue Benutzerkonten anlegen (Recht: Create User objects). |
-| Benutzer löschen | CARO darf Benutzerkonten in dieser OU löschen (Recht: Delete User objects). Gelöschte Konten lassen sich nur mit Aufwand wiederherstellen. |
-| Benutzerattribute bearbeiten | CARO darf Attribute von Benutzern ändern (Name, Telefon, Abteilung, Manager, Erweiterungsattribute u. a.). Der Umfang richtet sich nach Ihrer späteren Wahl: alle Eigenschaften oder nur die Attributliste. |
-| Kennwort zurücksetzen | CARO darf Kennwörter zurücksetzen und die Änderung bei der nächsten Anmeldung erzwingen (Recht: Reset Password, Schreiben von pwdLastSet). |
-| Konto deaktivieren und aktivieren | CARO darf Konten deaktivieren und aktivieren (Schreiben von userAccountControl). |
-| Konto entsperren | CARO darf gesperrte Konten entsperren (Schreiben von lockoutTime). |
-| Ablaufdatum des Kontos bearbeiten | CARO darf das Ablaufdatum eines Kontos ändern (Schreiben von accountExpires). |
-| Benutzer verschieben | CARO darf Benutzer aus dieser OU in andere OUs verschieben, z. B. in die OU für deaktivierte Benutzer (Rechte: Löschen hier, Anlegen im Ziel). Das Ziel muss selbst eine angegebene OU sein. |
+| Benutzer anlegen | Create User objects |
+| Benutzer löschen | Delete User objects |
+| Benutzerattribute bearbeiten | Read/Write Properties |
+| Kennwort zurücksetzen | Reset Password, Write pwdLastSet |
+| Konto deaktivieren und aktivieren | Write userAccountControl |
+| Konto entsperren | Write lockoutTime |
+| Ablaufdatum des Kontos bearbeiten | Write accountExpires |
+| Benutzer verschieben | Delete + Create User objects |
 
 #### Gruppen
 
-CARO legt Gruppen an, z. B. Berechtigungsgruppen für Fileserver, und ändert deren Mitglieder. Das geschieht auch automatisch über Smart Permissions.
+CARO legt Gruppen an, z. B. Berechtigungsgruppen für Fileserver, ändert und löscht sie und ändert deren Mitglieder (auch automatisch über Smart Permissions).
 
-| Funktion | Wirkung und vergebenes Recht |
+| Funktion | Windows-Recht |
 |---|---|
-| Gruppen anlegen, umbenennen und ändern | CARO darf Gruppen anlegen, umbenennen und deren Eigenschaften setzen (Rechte: Create Group objects, Read/Write All Properties auf Gruppen). |
-| Gruppen löschen | CARO darf Gruppen in dieser OU löschen (Recht: Delete Group objects). |
-| Gruppenmitglieder ändern | CARO darf Mitglieder zu Gruppen hinzufügen und entfernen (Recht: Write Members). |
-| Unter-OUs anlegen (Smart Permissions) | CARO darf in dieser OU weitere OUs anlegen und löschen, z. B. eine Unter-OU je Fileserver (Rechte: Create/Delete OU objects). |
+| Gruppen anlegen, umbenennen und ändern | Create Group objects, Read/Write All Properties |
+| Gruppen löschen | Delete Group objects |
+| Gruppenmitglieder ändern | Write Members |
+| Unter-OUs anlegen und löschen | Create/Delete OU objects |
 
 #### Bereinigung inaktiver Benutzer
 
-Der CARO-Baustein zur Bereinigung verschiebt Benutzer, die sich x Tage nicht angemeldet haben, in eine eigene OU und löscht sie dort nach weiteren x Tagen.
+Die CARO-Bereinigung verschiebt Benutzer, die sich x Tage nicht angemeldet haben, in eine eigene OU und löscht sie dort nach weiteren x Tagen. Zum Verschieben braucht CARO dort technisch dasselbe Recht wie zum Anlegen von Benutzern.
 
-| Funktion | Wirkung und vergebenes Recht |
+| Funktion | Windows-Recht |
 |---|---|
-| Benutzer aufnehmen (Verschieben hierher) | CARO darf Benutzer in diese OU verschieben. Technisch ist dafür dasselbe Recht nötig wie zum Anlegen (Create User objects). CARO könnte hier also auch Benutzer neu anlegen. Das lässt sich in AD nicht trennen. |
-| Benutzer löschen | CARO darf dort Benutzer löschen (Baustein "Deaktivierte Benutzer in einer OU löschen"). |
-| Konto deaktivieren | CARO darf dort Konten deaktivieren (Schreiben von userAccountControl). |
+| Benutzer aufnehmen (Verschieben hierher) | Create User objects |
+| Benutzer löschen | Delete User objects |
+| Konto deaktivieren | Write userAccountControl |
 
 #### Weitere Gruppen für neue Benutzer
 
-Optional: Gruppen außerhalb der oben genannten Gruppen-OU, in die CARO neue Benutzer beim Anlegen automatisch einträgt. Dort darf CARO nur Mitglieder ändern.
+Optional: Gruppen außerhalb der oben genannten Gruppen-OU, in die CARO neue Benutzer beim Anlegen einträgt. Dort darf CARO nur Mitglieder ändern.
 
-| Funktion | Wirkung und vergebenes Recht |
+| Funktion | Windows-Recht |
 |---|---|
-| Gruppenmitglieder ändern | CARO darf nur Mitglieder hinzufügen und entfernen (Recht: Write Members). Kein Anlegen oder Löschen von Gruppen. |
+| Gruppenmitglieder ändern | Write Members |
 
 **Domänenweit:** Statt einer OU kann die ganze Domäne gewählt werden. Gibt man die Domäne selbst als OU ein (z. B. `DC=firma,DC=de`), behandelt das Skript das genauso und verlangt dieselben Bestätigungen. Das Skript warnt dann ausdrücklich und verlangt bei Bereichen mit Anlegen, Löschen oder Verschieben von Benutzern eine zweite Bestätigung.
 
@@ -151,7 +170,7 @@ Wenn eine gewählte Funktion Benutzer-Eigenschaften braucht, fragt das Skript **
 | **Alle Eigenschaften** (Write All Properties) | Volle Funktionalität. Auch sicherheitsrelevante Eigenschaften der Benutzer sind beschreibbar. |
 | **Nur die Attributliste** (Property-specific) | Weniger Rechte. **Je nach Auswahl können einige CARO-Funktionen nicht funktionieren**, wenn ein benötigtes Attribut in der Liste fehlt. |
 
-Die Attributliste steht in `CARO-AD-Attributes.json` neben dem Skript und darf bearbeitet werden. Fehlt die Datei, nutzt das Skript die eingebettete Liste. Wählt man dann im Plan "Liste nicht verwenden", legt das Skript die Vorlage in den Unterordner `CARO-ServiceAccount-Setup-Logs` (zu den anderen JSON-Dateien und Logs). Man passt sie dort an und startet den Plan neu. Die Datei hat dann Vorrang vor der eingebetteten Liste. Grundlage ist CAROs eigene Aufgabe "Create new user" (`examples/cts.manage.nativeActiveDirectoryStandardUser.json`). Für die gewählten Funktionen ergänzt das Skript automatisch die Pflichtattribute `userAccountControl`, `lockoutTime`, `accountExpires` und `pwdLastSet`. Das Kennwort wird nicht als Attribut geschrieben, sondern über das Recht "Reset Password".
+Die Attributliste steht in `CARO-AD-Attributes.json` neben dem Skript und darf bearbeitet werden. Fehlt die Datei, nutzt das Skript die eingebettete Liste. Wählt man dann im Plan "Liste nicht verwenden", legt das Skript die Vorlage in den Unterordner `CARO-ServiceAccount-Setup-Logs` (zu den anderen JSON-Dateien und Logs). Man passt sie dort an und startet den Plan neu. Die Datei hat dann Vorrang vor der eingebetteten Liste. Grundlage ist CAROs eigene Aufgabe "Create new user" (`examples/cts.manage.nativeActiveDirectoryStandardUser.json`). Für die gewählten Funktionen ergänzt das Skript automatisch die Pflichtattribute `userAccountControl`, `lockoutTime`, `accountExpires` und `pwdLastSet`. Das Kennwort wird nicht als Attribut geschrieben, sondern über das Recht "Reset Password". Attribute, die es im Active Directory nicht gibt (z. B. `extensionAttribute1` bis `15` ohne Exchange-Schemaerweiterung), meldet der Plan und gibt sie nicht frei. Apply überspringt sie ebenfalls mit einem Hinweis, statt abzubrechen.
 
 ## Exchange (On-Premises)
 
@@ -177,6 +196,26 @@ Einzelrechte pro Ordner (Traverse, Berechtigungen ändern) reichen für den voll
 
 Ist der CARO-Server oder ein Fileserver zugleich ein **Domänencontroller** (z. B. in einer Testumgebung, in der alles auf einem Rechner läuft), warnt das Skript ausdrücklich, **verweigert aber nichts**. Auf einem Domänencontroller sind die „lokalen“ Gruppen **Domänengruppen** (Container Builtin) und gelten für die ganze Domäne. Der Service-Account hätte dann praktisch Domänenadministrator-Rechte (Administrators), dürfte Dateien und Registrierung der Domänencontroller sichern und wiederherstellen (Backup Operators) und Druckertreiber laden (Print Operators). Die Warnung steht in der Zusammenfassung des Plans, im Report und noch einmal vor der Bestätigung bei Apply. In der Praxis sollten CARO-Server und Fileserver keine Domänencontroller sein. Gruppen werden über ihre SID angesprochen, nicht über den (sprachabhängigen) Namen.
 
+## Datenbank-Konto (SQL Server)
+
+CARO schreibt seine Daten in eine SQL-Datenbank. Dafür braucht es ein Konto mit `db_owner` auf der CARO-Datenbank, oder mit `dbcreator`, wenn der CARO-Configurator die Datenbank selbst anlegen soll. Die meisten Admins nehmen dafür ein eigenes Konto. Das Skript legt es an, wenn der Bereich „Datenbank“ gewählt ist.
+
+| Auswahl | Möglichkeiten |
+|---|---|
+| Kontoart | **Windows-Konto** (neues AD-Konto, bekommt Zugriff auf den SQL-Server) oder, nur bei einem reinen Datenbank-Account, **SQL-Konto** (SQL-Login mit Kennwort, ohne AD-Konto) |
+| Rechte | **DB-Owner** (`db_owner`, Standard, nur auf der CARO-Datenbank) oder **DB-Creator** (`dbcreator`, größeres Recht auf dem ganzen Server) |
+| Vergabe | **direkt** im SQL-Server, **SQL-Datei für den DBA** oder, nur beim Windows-Konto, **gar nicht** (nur das Konto anlegen) |
+
+**DB-Owner:** Das Skript fragt den Namen der Datenbank. Existiert sie nicht, legt es sie nach Rückfrage mit den **Standardeinstellungen** des SQL-Servers an. Das Konto braucht dadurch nur `db_owner` und nicht `dbcreator`. Den Datenbanknamen trägst du später im CARO-Configurator ein.
+
+**Direkte Vergabe:** Das Skript fragt SQL-Server (Rechnername) und Instanz (Enter = Standardinstanz), verbindet sich mit dem Windows-Konto des ausführenden Admins und prüft, ob dieser `sysadmin` ist. Ist keine Verbindung möglich oder fehlen Rechte, bietet es an: Server neu eingeben, eine andere Option wählen (ein Schritt zurück zu Rechten und Vergabe), eine **SQL-Datei für den DBA** erzeugen oder abbrechen.
+
+**SQL-Datei für den DBA:** `...-CARO-SA-Datenbank.sql` im Ordner der Logdateien. Sie enthält Datenbank (falls nötig), Login, Benutzer und Rolle. Bei einem SQL-Konto steht darin ein Platzhalter statt des Kennworts, das Kennwort gibt der Admin dem DBA auf sicherem Weg.
+
+**Hinweise für den CARO-Configurator:** Am Ende von Plan und Apply listet das Skript, was im Bereich „Datenbank“ des Configurators einzutragen ist: SQL-Server, Instanz, DB-Name, Benutzer, Windows-Domäne und ob „Windows-Konto verwenden“ gilt. Das Kennwort steht nie darin.
+
+**Rollback:** Entfernt Rolle, Benutzer und Login, die das Skript angelegt hat. Eine **Datenbank wird nie gelöscht**, auch nicht, wenn das Skript sie angelegt hat, denn dort könnten schon Daten liegen.
+
 ## Kennwort
 
 Bei einem neuen Account wählt man: **generieren** (24 Zeichen, wird genau **einmal** angezeigt, danach wird die Anzeige gelöscht) oder **selbst eingeben** (verdeckt, mit Wiederholung). Das Kennwort steht **nie** in Config, Result, Report oder Log. Es wird erst bei Apply abgefragt bzw. erzeugt. Der Plan fragt nur die Strategie.
@@ -194,6 +233,7 @@ Alle Dateien liegen im Ordner `CARO-ServiceAccount-Setup-Logs` neben dem Skript.
 | `...-Plan.log`, `...-Apply.log`, `...-Rollback.log` | Laufzeitprotokoll: Zeit, Stufe, Meldung, Objekt, Ergebnis. Wird **ab der ersten Zeile** geschrieben, auch bei Abbruch oder Fehler. Auch die Eingaben stehen darin (Kennwörter nie). | jeder Lauf |
 | `...-Config.json` | geplante Aktionen mit Was, Wo, Warum und dem Zustand bei Plan | Plan |
 | `...-Report.md` | lesbare Zusammenfassung für Review und Freigabe | Plan |
+| `...-Datenbank.sql` | SQL-Datei für den DBA, wenn die SQL-Rechte nicht direkt vergeben werden | Apply |
 | `...-Result.json` | tatsächlich ausgeführte Aktionen mit Status (`Created`, `AlreadyPresent`, `Error`, `WhatIf`) und den Angaben für den Rollback | Apply |
 | `...-Rollback.json` | tatsächlich zurückgebaute Aktionen | Rollback |
 
@@ -219,8 +259,9 @@ Die Tests prüfen unter anderem, dass diese README jeden Parameter, jeden Modus,
 
 - Nicht Teil dieses Skripts: **Observer** (eigene Voraussetzungen auf den Domänencontrollern), **Entra ID** und **Exchange Online** (App-Registrierung), **Computer-Objekte**, Einzelrechte pro Ordner.
 - **Verschieben von Benutzern:** Die genauen AD-Rechte (Löschen im Quell-OU, Anlegen im Ziel-OU) sind nach Microsoft-Standard abgeleitet und noch nicht gegen ein echtes AD getestet. Alle Rechte stehen in `src\Private\03-Catalog.ps1` und können dort angepasst werden.
+- **Datenbank:** Der SQL-Teil (Verbindung, Datenbank, Login, Rechte) ist nicht gegen einen echten SQL-Server getestet. Die angelegte Datenbank hat die Standardeinstellungen des SQL-Servers (Sortierung, Dateipfade). Ob CARO bestimmte Einstellungen erwartet, ist nicht belegt.
 - **Exchange Read-Only:** Es ist nicht belegt, ob die Rolle für alle CARO-Analysen reicht.
-- Das Anlegen und Löschen von Unter-OUs (Smart Permissions) wird nur auf Wunsch vergeben.
+- „Unter-OUs anlegen und löschen“ (Smart Permissions) gehört fest zum Bereich Gruppen und steht offen in der Rechteliste. Im Profil „Anpassen“ lässt es sich abwählen.
 - **CARO-Observer:** Er zeigt nach bisherigem Eindruck die Zeit, zu der er ein Ereignis **eingelesen** hat, nicht unbedingt die Zeit, zu der es passiert ist. Die tatsächliche Reihenfolge der Aktionen steht im Apply-Log und in der Ereignisanzeige des Domänencontrollers.
 - Windows PowerShell 5.1: Die .ps1-Dateien in `src` müssen als UTF-8 mit BOM gespeichert bleiben (sonst werden Umlaute falsch gelesen). Die Einzeldatei in `dist` ist reines ASCII und davon nicht betroffen. Beides prüfen Tests.
 

@@ -1,6 +1,6 @@
 # CARO-ServiceAccount-Setup.ps1 - Einzeldatei-Fassung (nicht von Hand bearbeiten)
 # Erzeugt aus src/ mit scripts/build_single_file.py. Der Hash dient nur der Aktualitaetspruefung.
-# Quell-Hash: 532b3fe514bf6cffe3b5ddb5ffbaadc552726a970186d56be658aecd93bbe65e
+# Quell-Hash: 6d55c51e2cf3477fa11c6586f6f7b6bb3c41812fd7305bc4d780858ad9946eea
 <#
 .SYNOPSIS
     Legt einen Service-Account fuer die CARO-Suite an und vergibt die dafuer noetigen Rechte.
@@ -443,104 +443,81 @@ function New-CaroFunction {
     param(
         [string]$Key,
         [string]$Title,
-        [string]$Explain,
+        [string]$Right,
         [object[]]$Specs
     )
-    return [pscustomobject]@{ Key = $Key; Title = $Title; Explain = $Explain; Specs = @($Specs) }
+    return [pscustomobject]@{ Key = $Key; Title = $Title; Right = $Right; Specs = @($Specs) }
 }
 
-# Die vier AD-Bereiche (intern "Rollen") mit ihren Funktionen.
+# Die vier AD-Bereiche (intern "Rollen") mit ihren Funktionen. Jede Funktion hat den deutschen Namen (Title)
+# und den Windows-Begriff des Rechts (Right).
 function Get-CaroRoleCatalog {
     $roles = @()
 
     $roles += [pscustomobject]@{
-        Key        = 'UserOU'
-        Title      = 'Benutzerkonten'
-        Purpose    = 'CARO legt Benutzerkonten an, loescht sie und aendert sie.'
-        Ask        = 'Soll CARO Benutzerkonten in Active Directory verwalten duerfen (mit den oben genannten Rechten)?'
-        Question   = 'In welcher OU (oder welchen OUs) liegen die Benutzerkonten, die CARO verwalten soll bzw. in denen neue Benutzer angelegt werden?'
-        BaseSuffix = 'Benutzer'
-        Functions  = @(
-            (New-CaroFunction -Key 'CreateUser' -Title 'Benutzer anlegen' `
-                -Explain 'CARO darf in dieser OU neue Benutzerkonten anlegen (Recht: Create User objects).' `
+        Key          = 'UserOU'
+        Title        = 'Benutzerkonten'
+        Purpose      = 'CARO legt Benutzerkonten an, loescht sie und aendert sie.'
+        DefaultScope = '1'
+        Functions    = @(
+            (New-CaroFunction -Key 'CreateUser' -Title 'Benutzer anlegen' -Right 'Create User objects' `
                 -Specs @(@{ Kind = 'ClassCreate'; Class = 'user' })),
-            (New-CaroFunction -Key 'DeleteUser' -Title 'Benutzer loeschen' `
-                -Explain 'CARO darf Benutzerkonten in dieser OU loeschen (Recht: Delete User objects). Geloeschte Konten lassen sich nur mit Aufwand wiederherstellen.' `
+            (New-CaroFunction -Key 'DeleteUser' -Title 'Benutzer loeschen' -Right 'Delete User objects' `
                 -Specs @(@{ Kind = 'ClassDelete'; Class = 'user' })),
-            (New-CaroFunction -Key 'UserAttributes' -Title 'Benutzerattribute bearbeiten' `
-                -Explain 'CARO darf Attribute von Benutzern aendern (Name, Telefon, Abteilung, Manager, Erweiterungsattribute u. a.). Der Umfang richtet sich nach Ihrer spaeteren Wahl: alle Eigenschaften oder nur die Attributliste.' `
+            (New-CaroFunction -Key 'UserAttributes' -Title 'Benutzerattribute bearbeiten' -Right 'Read/Write Properties' `
                 -Specs @(@{ Kind = 'Props'; Class = 'user'; Attrs = @('@LIST') })),
-            (New-CaroFunction -Key 'ResetPassword' -Title 'Kennwort zuruecksetzen' `
-                -Explain 'CARO darf Kennwoerter zuruecksetzen und die Aenderung bei der naechsten Anmeldung erzwingen (Recht: Reset Password, Schreiben von pwdLastSet).' `
+            (New-CaroFunction -Key 'ResetPassword' -Title 'Kennwort zuruecksetzen' -Right 'Reset Password, Write pwdLastSet' `
                 -Specs @(@{ Kind = 'ExtendedRight'; Class = 'user'; ExtendedRight = 'User-Force-Change-Password' }, @{ Kind = 'Props'; Class = 'user'; Attrs = @('pwdLastSet') })),
-            (New-CaroFunction -Key 'DisableUser' -Title 'Konto deaktivieren und aktivieren' `
-                -Explain 'CARO darf Konten deaktivieren und aktivieren (Schreiben von userAccountControl).' `
+            (New-CaroFunction -Key 'DisableUser' -Title 'Konto deaktivieren und aktivieren' -Right 'Write userAccountControl' `
                 -Specs @(@{ Kind = 'Props'; Class = 'user'; Attrs = @('userAccountControl') })),
-            (New-CaroFunction -Key 'UnlockUser' -Title 'Konto entsperren' `
-                -Explain 'CARO darf gesperrte Konten entsperren (Schreiben von lockoutTime).' `
+            (New-CaroFunction -Key 'UnlockUser' -Title 'Konto entsperren' -Right 'Write lockoutTime' `
                 -Specs @(@{ Kind = 'Props'; Class = 'user'; Attrs = @('lockoutTime') })),
-            (New-CaroFunction -Key 'SetExpires' -Title 'Ablaufdatum des Kontos bearbeiten' `
-                -Explain 'CARO darf das Ablaufdatum eines Kontos aendern (Schreiben von accountExpires).' `
+            (New-CaroFunction -Key 'SetExpires' -Title 'Ablaufdatum des Kontos bearbeiten' -Right 'Write accountExpires' `
                 -Specs @(@{ Kind = 'Props'; Class = 'user'; Attrs = @('accountExpires') })),
-            (New-CaroFunction -Key 'MoveUser' -Title 'Benutzer verschieben' `
-                -Explain 'CARO darf Benutzer aus dieser OU in andere OUs verschieben, z. B. in die OU fuer deaktivierte Benutzer (Rechte: Loeschen hier, Anlegen im Ziel). Das Ziel muss selbst eine angegebene OU sein.' `
+            (New-CaroFunction -Key 'MoveUser' -Title 'Benutzer verschieben' -Right 'Delete + Create User objects' `
                 -Specs @(@{ Kind = 'ClassDelete'; Class = 'user' }, @{ Kind = 'ClassCreate'; Class = 'user' }))
         )
     }
 
     $roles += [pscustomobject]@{
-        Key        = 'GroupOU'
-        Title      = 'Gruppen'
-        Purpose    = 'CARO legt Gruppen an, z. B. Berechtigungsgruppen fuer Fileserver, und aendert deren Mitglieder. Das geschieht auch automatisch ueber Smart Permissions.'
-        Ask        = 'Soll CARO Gruppen in Active Directory verwalten duerfen (mit den oben genannten Rechten)?'
-        Question   = 'In welcher OU (oder welchen OUs) liegen bzw. entstehen die Gruppen?'
-        BaseSuffix = 'Gruppen'
-        Functions  = @(
-            (New-CaroFunction -Key 'CreateGroup' -Title 'Gruppen anlegen, umbenennen und aendern' `
-                -Explain 'CARO darf Gruppen anlegen, umbenennen und deren Eigenschaften setzen (Rechte: Create Group objects, Read/Write All Properties auf Gruppen).' `
+        Key          = 'GroupOU'
+        Title        = 'Gruppen'
+        Purpose      = 'CARO legt Gruppen an, z. B. Berechtigungsgruppen fuer Fileserver, aendert und loescht sie und aendert deren Mitglieder (auch automatisch ueber Smart Permissions).'
+        DefaultScope = '1'
+        Functions    = @(
+            (New-CaroFunction -Key 'CreateGroup' -Title 'Gruppen anlegen, umbenennen und aendern' -Right 'Create Group objects, Read/Write All Properties' `
                 -Specs @(@{ Kind = 'ClassCreate'; Class = 'group' }, @{ Kind = 'PropsAll'; Class = 'group' })),
-            (New-CaroFunction -Key 'DeleteGroup' -Title 'Gruppen loeschen' `
-                -Explain 'CARO darf Gruppen in dieser OU loeschen (Recht: Delete Group objects).' `
+            (New-CaroFunction -Key 'DeleteGroup' -Title 'Gruppen loeschen' -Right 'Delete Group objects' `
                 -Specs @(@{ Kind = 'ClassDelete'; Class = 'group' })),
-            (New-CaroFunction -Key 'GroupMembers' -Title 'Gruppenmitglieder aendern' `
-                -Explain 'CARO darf Mitglieder zu Gruppen hinzufuegen und entfernen (Recht: Write Members).' `
+            (New-CaroFunction -Key 'GroupMembers' -Title 'Gruppenmitglieder aendern' -Right 'Write Members' `
                 -Specs @(@{ Kind = 'PropsList'; Class = 'group'; Attrs = @('member') })),
-            (New-CaroFunction -Key 'SubOus' -Title 'Unter-OUs anlegen (Smart Permissions)' `
-                -Explain 'CARO darf in dieser OU weitere OUs anlegen und loeschen, z. B. eine Unter-OU je Fileserver (Rechte: Create/Delete OU objects).' `
+            (New-CaroFunction -Key 'SubOus' -Title 'Unter-OUs anlegen und loeschen' -Right 'Create/Delete OU objects' `
                 -Specs @(@{ Kind = 'ClassCreate'; Class = 'organizationalUnit' }, @{ Kind = 'ClassDelete'; Class = 'organizationalUnit' }))
         )
     }
 
     $roles += [pscustomobject]@{
-        Key        = 'DisabledUserOU'
-        Title      = 'Bereinigung inaktiver Benutzer'
-        Purpose    = 'Der CARO-Baustein zur Bereinigung verschiebt Benutzer, die sich x Tage nicht angemeldet haben, in eine eigene OU und loescht sie dort nach weiteren x Tagen.'
-        Ask        = 'Nutzen Sie diese Bereinigung (CARO bekommt dafuer die oben genannten Rechte)?'
-        Question   = 'Welche OU nimmt die verschobenen Benutzer auf?'
-        BaseSuffix = 'Deaktivierte Benutzer'
-        Functions  = @(
-            (New-CaroFunction -Key 'ReceiveUsers' -Title 'Benutzer aufnehmen (Verschieben hierher)' `
-                -Explain 'CARO darf Benutzer in diese OU verschieben. Technisch ist dafuer dasselbe Recht noetig wie zum Anlegen (Create User objects). CARO koennte hier also auch Benutzer neu anlegen. Das laesst sich in AD nicht trennen.' `
+        Key          = 'DisabledUserOU'
+        Title        = 'Bereinigung inaktiver Benutzer'
+        Purpose      = 'Die CARO-Bereinigung verschiebt Benutzer, die sich x Tage nicht angemeldet haben, in eine eigene OU und loescht sie dort nach weiteren x Tagen. Zum Verschieben braucht CARO dort technisch dasselbe Recht wie zum Anlegen von Benutzern.'
+        DefaultScope = '1'
+        Functions    = @(
+            (New-CaroFunction -Key 'ReceiveUsers' -Title 'Benutzer aufnehmen (Verschieben hierher)' -Right 'Create User objects' `
                 -Specs @(@{ Kind = 'ClassCreate'; Class = 'user' })),
-            (New-CaroFunction -Key 'DeleteUser' -Title 'Benutzer loeschen' `
-                -Explain 'CARO darf dort Benutzer loeschen (Baustein "Deaktivierte Benutzer in einer OU loeschen").' `
+            (New-CaroFunction -Key 'DeleteUser' -Title 'Benutzer loeschen' -Right 'Delete User objects' `
                 -Specs @(@{ Kind = 'ClassDelete'; Class = 'user' })),
-            (New-CaroFunction -Key 'DisableUser' -Title 'Konto deaktivieren' `
-                -Explain 'CARO darf dort Konten deaktivieren (Schreiben von userAccountControl).' `
+            (New-CaroFunction -Key 'DisableUser' -Title 'Konto deaktivieren' -Right 'Write userAccountControl' `
                 -Specs @(@{ Kind = 'Props'; Class = 'user'; Attrs = @('userAccountControl') }))
         )
     }
 
     $roles += [pscustomobject]@{
-        Key        = 'MembershipOU'
-        Title      = 'Weitere Gruppen fuer neue Benutzer'
-        Purpose    = 'Optional: Gruppen ausserhalb der oben genannten Gruppen-OU, in die CARO neue Benutzer beim Anlegen automatisch eintraegt. Dort darf CARO nur Mitglieder aendern.'
-        Ask        = ''
-        Question   = 'In welcher OU (oder welchen OUs) liegen diese Gruppen?'
-        BaseSuffix = ''
-        Functions  = @(
-            (New-CaroFunction -Key 'GroupMembers' -Title 'Gruppenmitglieder aendern' `
-                -Explain 'CARO darf nur Mitglieder hinzufuegen und entfernen (Recht: Write Members). Kein Anlegen oder Loeschen von Gruppen.' `
+        Key          = 'MembershipOU'
+        Title        = 'Weitere Gruppen fuer neue Benutzer'
+        Purpose      = 'Optional: Gruppen ausserhalb der oben genannten Gruppen-OU, in die CARO neue Benutzer beim Anlegen eintraegt. Dort darf CARO nur Mitglieder aendern.'
+        DefaultScope = '3'
+        Functions    = @(
+            (New-CaroFunction -Key 'GroupMembers' -Title 'Gruppenmitglieder aendern' -Right 'Write Members' `
                 -Specs @(@{ Kind = 'PropsList'; Class = 'group'; Attrs = @('member') }))
         )
     }
@@ -553,18 +530,10 @@ function Get-CaroRole {
     return (Get-CaroRoleCatalog | Where-Object { $_.Key -eq $Key } | Select-Object -First 1)
 }
 
-# Alle Funktionsschluessel einer Rolle; SubOus nur auf Wunsch.
+# Alle Funktionsschluessel eines Bereichs.
 function Get-CaroDefaultFunctionKeys {
-    param(
-        [Parameter(Mandatory = $true)][string]$RoleKey,
-        [bool]$IncludeSubOus = $false
-    )
-    $keys = @()
-    foreach ($f in (Get-CaroRole -Key $RoleKey).Functions) {
-        if ($f.Key -eq 'SubOus' -and -not $IncludeSubOus) { continue }
-        $keys += $f.Key
-    }
-    return $keys
+    param([Parameter(Mandatory = $true)][string]$RoleKey)
+    return @((Get-CaroRole -Key $RoleKey).Functions | ForEach-Object { $_.Key })
 }
 
 # Anzeigename einer AD-Klasse.
@@ -815,6 +784,22 @@ function New-CaroAction {
     }
 }
 
+# Fuer welche Bereiche gilt der Account (AD, Fileserver, Exchange, Database)? Fehlt die Angabe, wird sie aus den Einstellungen abgeleitet.
+function Get-CaroAreas {
+    param([Parameter(Mandatory = $true)]$Settings)
+    if ($Settings.Areas) { return @($Settings.Areas) }
+    $areas = @()
+    $anyRole = $false
+    if ($Settings.Roles -is [System.Collections.IDictionary]) {
+        foreach ($v in $Settings.Roles.Values) { if ($v.Enabled) { $anyRole = $true } }
+    }
+    if ($anyRole) { $areas += 'AD' }
+    if ($Settings.Fileserver -and $Settings.Fileserver.Mode -ne 'None') { $areas += 'Fileserver' }
+    if ($Settings.Exchange -and $Settings.Exchange -ne 'None') { $areas += 'Exchange' }
+    if ($Settings.Database -and $Settings.Database.Enabled) { $areas += 'Database' }
+    return $areas
+}
+
 # Erzeugt die komplette, geordnete Aktionsliste.
 # Reihenfolge: Account, lokale Gruppen (CARO-Server), Fileserver, Exchange, AD-Delegationen.
 function New-CaroActionList {
@@ -824,32 +809,39 @@ function New-CaroActionList {
     $sam = $acc.Sam
     $actions = New-Object System.Collections.ArrayList
 
-    # 1) Account
-    if ($acc.Adopt) {
-        $what = "Vorhandenen Account '$sam' uebernehmen (Passwort und Attribute bleiben unveraendert)"
-    }
-    else {
-        $what = "Service-Account '$sam' anlegen"
-    }
-    [void]$actions.Add((New-CaroAction -Type 'CreateAccount' -Area 'Konto' `
-                -What $what -Where $acc.TargetOu `
-                -Why 'CARO fuehrt alle Lese- und Schreiboperationen mit einem hinterlegten Zugangskonto aus; ein eigenes Service-Konto wird empfohlen.' `
-                -Params @{
-                Sam                  = $sam
-                DisplayName          = $acc.DisplayName
-                Description          = $acc.Description
-                TargetOu             = $acc.TargetOu
-                Adopt                = [bool]$acc.Adopt
-                PasswordMode         = $acc.PasswordMode
-                PasswordNeverExpires = [bool]$acc.PasswordNeverExpires
-            }))
+    $areas = Get-CaroAreas -Settings $Settings
+    $isSqlAccount = ($acc.Kind -eq 'Sql')
 
-    # 2) Lokale Administratoren des CARO-Servers (immer)
-    [void]$actions.Add((New-CaroAction -Type 'AddLocalGroupMember' -Area 'CARO-Server' `
-                -What "Account '$sam' in die lokalen Administratoren eintragen (S-1-5-32-544)" `
-                -Where ('CARO-Server ' + [System.Environment]::MachineName) `
-                -Why 'Grundvoraussetzung fuer alle CARO-Funktionen: der Account muss lokaler Administrator auf dem CARO-Server sein.' `
-                -Params @{ Computer = '.'; ComputerLabel = [System.Environment]::MachineName; GroupSid = $script:CaroSid.Administrators; GroupLabel = 'Administrators'; Sam = $sam }))
+    # 1) Account (ein reines SQL-Konto ist kein AD-Konto und wird erst bei den SQL-Aktionen angelegt)
+    if (-not $isSqlAccount) {
+        if ($acc.Adopt) {
+            $what = "Vorhandenen Account '$sam' uebernehmen (Passwort und Attribute bleiben unveraendert)"
+        }
+        else {
+            $what = "Service-Account '$sam' anlegen"
+        }
+        [void]$actions.Add((New-CaroAction -Type 'CreateAccount' -Area 'Konto' `
+                    -What $what -Where $acc.TargetOu `
+                    -Why 'CARO fuehrt alle Lese- und Schreiboperationen mit einem hinterlegten Zugangskonto aus; ein eigenes Service-Konto wird empfohlen.' `
+                    -Params @{
+                    Sam                  = $sam
+                    DisplayName          = $acc.DisplayName
+                    Description          = $acc.Description
+                    TargetOu             = $acc.TargetOu
+                    Adopt                = [bool]$acc.Adopt
+                    PasswordMode         = $acc.PasswordMode
+                    PasswordNeverExpires = [bool]$acc.PasswordNeverExpires
+                }))
+    }
+
+    # 2) Lokale Administratoren des CARO-Servers (nur fuer Accounts, die AD, Fileserver oder Exchange bedienen)
+    if ($areas -contains 'AD' -or $areas -contains 'Fileserver' -or $areas -contains 'Exchange') {
+        [void]$actions.Add((New-CaroAction -Type 'AddLocalGroupMember' -Area 'CARO-Server' `
+                    -What "Account '$sam' in die lokalen Administratoren eintragen (S-1-5-32-544)" `
+                    -Where ('CARO-Server ' + [System.Environment]::MachineName) `
+                    -Why 'Grundvoraussetzung fuer alle CARO-Funktionen: der Account muss lokaler Administrator auf dem CARO-Server sein.' `
+                    -Params @{ Computer = '.'; ComputerLabel = [System.Environment]::MachineName; GroupSid = $script:CaroSid.Administrators; GroupLabel = 'Administrators'; Sam = $sam }))
+    }
 
     # 3) Fileserver
     $fs = $Settings.Fileserver
@@ -910,6 +902,44 @@ function New-CaroActionList {
         }
     }
 
+    # 6) Datenbank (SQL Server)
+    $db = $Settings.Database
+    if ($db -and $db.Enabled -and $db.Mode -ne 'None') {
+        $login = [string]$db.LoginName
+        $serverLabel = Get-CaroSqlInstanceName -Server ([string]$db.SqlServer) -Instance ([string]$db.Instance)
+        $baseParams = @{ Server = [string]$db.SqlServer; Instance = [string]$db.Instance; LoginName = $login; AccountType = [string]$db.AccountType; DbName = [string]$db.DbName; Right = [string]$db.Right; PasswordMode = [string]$acc.PasswordMode }
+        if ($db.Mode -eq 'DbaScript') {
+            $sqlParams = @{ LoginName = $login; AccountType = [string]$db.AccountType; DbName = [string]$db.DbName; Right = [string]$db.Right; CreateDatabase = [bool]$db.CreateDatabase }
+            [void]$actions.Add((New-CaroAction -Type 'WriteSqlScript' -Area 'Datenbank' `
+                        -What "SQL-Datei fuer den DBA erzeugen (Konto '$login')" -Where 'Ordner der Logdateien' `
+                        -Why 'Das Skript vergibt die SQL-Rechte nicht selbst. Der DBA fuehrt die erzeugte SQL-Datei im SQL-Server aus.' `
+                        -Params $sqlParams))
+        }
+        else {
+            if ($db.Right -eq 'DbOwner' -and $db.CreateDatabase) {
+                [void]$actions.Add((New-CaroAction -Type 'SqlCreateDatabase' -Area 'Datenbank' `
+                            -What ("Datenbank '{0}' anlegen (Standardeinstellungen)" -f $db.DbName) -Where ('SQL-Server ' + $serverLabel) `
+                            -Why 'CARO schreibt seine Daten in diese Datenbank. Dadurch braucht das Konto nur db_owner und nicht das groessere Recht dbcreator.' `
+                            -Params $baseParams))
+            }
+            if ($db.AccountType -eq 'Sql') { $loginWhat = "SQL-Konto '$login' anlegen" } else { $loginWhat = "SQL-Login fuer das Windows-Konto '$login' anlegen" }
+            [void]$actions.Add((New-CaroAction -Type 'SqlCreateLogin' -Area 'Datenbank' `
+                        -What $loginWhat -Where ('SQL-Server ' + $serverLabel) `
+                        -Why 'Zugang des Kontos zum SQL-Server, mit dem CARO auf die Datenbank zugreift.' `
+                        -Params $baseParams))
+            if ($db.Right -eq 'DbOwner') {
+                $grantWhat = "'{0}' in der Datenbank '{1}' zum Benutzer machen und in die Rolle db_owner aufnehmen (DB-Owner)" -f $login, $db.DbName
+                $grantWhy = 'CARO braucht db_owner auf seiner Datenbank.'
+            }
+            else {
+                $grantWhat = "'{0}' in die Serverrolle dbcreator aufnehmen (DB-Creator)" -f $login
+                $grantWhy = 'Der CARO-Configurator kann die Datenbank dann selbst anlegen. Das ist ein Recht auf dem ganzen SQL-Server.'
+            }
+            [void]$actions.Add((New-CaroAction -Type 'SqlGrantRole' -Area 'Datenbank' `
+                        -What $grantWhat -Where ('SQL-Server ' + $serverLabel) -Why $grantWhy -Params $baseParams))
+        }
+    }
+
     $list = @($actions)
     for ($i = 0; $i -lt $list.Count; $i++) { $list[$i].Id = 'A{0:000}' -f ($i + 1) }
     return $list
@@ -928,10 +958,14 @@ function Get-CaroDomainControllerWarnings {
         'S-1-5-32-550' = 'Print Operators (darf auf Domaenencontrollern Druckertreiber laden)'
     }
     $warnings = @()
+    $done = @{}
     foreach ($dc in $DomainControllers) {
+        $dcKey = ConvertTo-CaroShortName -Name $dc
+        if ($done.ContainsKey($dcKey)) { continue }
+        $done[$dcKey] = $true
         $sids = @()
         foreach ($a in $Actions) {
-            if ($a.Type -eq 'AddLocalGroupMember' -and $a.Params.ComputerLabel -ieq $dc -and $sids -notcontains $a.Params.GroupSid) { $sids += $a.Params.GroupSid }
+            if ($a.Type -eq 'AddLocalGroupMember' -and (ConvertTo-CaroShortName -Name $a.Params.ComputerLabel) -eq $dcKey -and $sids -notcontains $a.Params.GroupSid) { $sids += $a.Params.GroupSid }
         }
         if ($sids.Count -eq 0) { continue }
         $groups = @($sids | ForEach-Object { if ($consequence.ContainsKey($_)) { $consequence[$_] } else { $_ } })
@@ -962,7 +996,7 @@ function New-CaroConfig {
     }
 }
 
-$script:CaroActionTypes = @('CreateAccount', 'AddLocalGroupMember', 'AddExchangeRoleGroupMember', 'GrantAd')
+$script:CaroActionTypes = @('CreateAccount', 'AddLocalGroupMember', 'AddExchangeRoleGroupMember', 'GrantAd', 'SqlCreateDatabase', 'SqlCreateLogin', 'SqlGrantRole', 'WriteSqlScript')
 
 # Prueft eine geladene Config-Datei. Liefert eine Liste von Fehlertexten (leer = in Ordnung).
 function Test-CaroConfig {
@@ -984,6 +1018,33 @@ function Test-CaroConfig {
         }
     }
     return $errors
+}
+
+# Angaben fuer den Bereich "Datenbank" im CARO-Configurator (reine Anzeige, funktioniert mit Hashtable und JSON-Objekt).
+function Get-CaroConfiguratorHints {
+    param([Parameter(Mandatory = $true)]$Settings)
+    $db = $Settings.Database
+    if (-not $db -or -not $db.Enabled) { return @() }
+    $lines = @()
+    $sam = [string]$Settings.Account.Sam
+    if ($db.Mode -eq 'DbaScript' -or -not $db.SqlServer) { $server = '(wie vom DBA bestaetigt)' } else { $server = [string]$db.SqlServer }
+    if ($db.Instance) { $instance = [string]$db.Instance } else { $instance = '(Standardinstanz)' }
+    if ($db.Right -eq 'DbOwner') { $dbName = [string]$db.DbName } else { $dbName = '(frei waehlbar, CARO legt sie an)' }
+    $lines += 'CARO-Configurator, Bereich Datenbank:'
+    $lines += ('  SQL-Server:  {0}' -f $server)
+    $lines += ('  Instanz:     {0}' -f $instance)
+    $lines += ('  DB-Name:     {0}' -f $dbName)
+    $lines += ('  Benutzer:    {0}' -f $sam)
+    if ($db.AccountType -eq 'Sql') {
+        $lines += '  Windows-Konto verwenden: nein (SQL-Konto)'
+    }
+    else {
+        $dom = [string]$db.DomainNetBios
+        if ($dom) { $lines += ('  Windows-Domaene: {0}' -f $dom) }
+        $lines += '  Windows-Konto verwenden: ja'
+    }
+    $lines += '  Kennwort:    das Kennwort dieses Kontos'
+    return $lines
 }
 
 # Markdown-Report fuer Review und Freigabe.
@@ -1022,7 +1083,17 @@ function ConvertTo-CaroReportMarkdown {
     else {
         [void]$sb.AppendLine('- Fileserver: Nein')
     }
+    if ($s.Database -and $s.Database.Enabled) {
+        [void]$sb.AppendLine(('- Datenbank: {0}-Konto, {1}, Modus {2}' -f $s.Database.AccountType, $s.Database.Right, $s.Database.Mode))
+    }
     [void]$sb.AppendLine('')
+    $hints = @(Get-CaroConfiguratorHints -Settings $s)
+    if ($hints.Count -gt 0) {
+        [void]$sb.AppendLine('## Angaben fuer den CARO-Configurator')
+        [void]$sb.AppendLine('')
+        foreach ($h in $hints) { [void]$sb.AppendLine(('    {0}' -f $h)) }
+        [void]$sb.AppendLine('')
+    }
     if (@($Config.Warnings).Count -gt 0) {
         [void]$sb.AppendLine('## Warnungen')
         [void]$sb.AppendLine('')
@@ -1073,7 +1144,8 @@ function New-CaroCheck {
 function Test-CaroPrerequisites {
     param(
         [string[]]$Areas = @(),
-        [string[]]$FileServers = @()
+        [string[]]$FileServers = @(),
+        [string[]]$SqlServers = @()
     )
     $r = @()
 
@@ -1133,6 +1205,13 @@ function Test-CaroPrerequisites {
         }
         catch { $detail = 'WinRM nicht erreichbar: ' + $_.Exception.Message }
         $r += New-CaroCheck -Name ('Fileserver {0} erreichbar' -f $server) -Ok $reachable -Detail $detail
+    }
+    foreach ($target in $SqlServers) {
+        $parts = $target -split '\|', 2
+        $inst = ''
+        if ($parts.Count -gt 1) { $inst = $parts[1] }
+        $conn = Test-CaroSqlConnection -Server $parts[0] -Instance $inst
+        $r += New-CaroCheck -Name ('SQL-Server {0} erreichbar' -f (Get-CaroSqlInstanceName -Server $parts[0] -Instance $inst)) -Ok $conn.Ok -Detail $conn.Detail
     }
     return $r
 }
@@ -1220,13 +1299,24 @@ function Test-CaroDomainController {
     catch { return $false }
 }
 
-# Welche der Zielrechner (CARO-Server, Fileserver) sind Domaenencontroller?
+# Kurzname eines Rechners in Kleinbuchstaben (ohne Domaenenanteil), damit SRV-CARO, srv-caro und srv-caro.firma.local
+# als derselbe Rechner erkannt werden.
+function ConvertTo-CaroShortName {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    return (($Name.Trim() -split '\.')[0]).ToLowerInvariant()
+}
+
+# Welche der Zielrechner (CARO-Server, Fileserver) sind Domaenencontroller? Jeder Rechner wird nur einmal geprueft.
 function Find-CaroDomainControllers {
     param([Parameter(Mandatory = $true)][object[]]$Actions)
-    $names = @($Actions | Where-Object { $_.Type -eq 'AddLocalGroupMember' } | ForEach-Object { $_.Params.ComputerLabel } | Select-Object -Unique)
+    $labels = @($Actions | Where-Object { $_.Type -eq 'AddLocalGroupMember' } | ForEach-Object { $_.Params.ComputerLabel })
+    $seen = @{}
     $found = @()
-    foreach ($n in $names) {
-        if (Test-CaroDomainController -Computer $n) { $found += $n }
+    foreach ($label in $labels) {
+        $key = ConvertTo-CaroShortName -Name $label
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        if (Test-CaroDomainController -Computer $label) { $found += $label }
     }
     return $found
 }
@@ -1406,6 +1496,39 @@ function Resolve-CaroSchemaGuid {
     return $guid
 }
 
+# Gibt es das Attribut im AD-Schema? Die Erweiterungsattribute extensionAttribute1 bis 15 entstehen z. B. erst
+# durch die Exchange-Schemaerweiterung und fehlen in einer Domaene ohne Exchange.
+function Test-CaroSchemaAttribute {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    try { $null = Resolve-CaroSchemaGuid -Kind 'Attribute' -Name $Name; return $true }
+    catch { return $false }
+}
+
+# Teilt Namen in vorhandene und im Schema fehlende Attribute.
+function Select-CaroExistingAttributes {
+    param([string[]]$Names = @())
+    $existing = @()
+    $missing = @()
+    foreach ($n in $Names) {
+        if (Test-CaroSchemaAttribute -Name $n) { $existing += $n } else { $missing += $n }
+    }
+    return [pscustomobject]@{ Existing = $existing; Missing = $missing }
+}
+
+# Entfernt Zugriffseintraege fuer Attribute, die es im Schema nicht gibt, und meldet deren Namen.
+function Split-CaroUnknownAttributes {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Descriptors)
+    $ok = @()
+    $skipped = @()
+    foreach ($d in $Descriptors) {
+        if ($d.ObjectKind -eq 'Attribute' -and -not (Test-CaroSchemaAttribute -Name $d.ObjectName)) {
+            if ($skipped -notcontains $d.ObjectName) { $skipped += $d.ObjectName }
+        }
+        else { $ok += $d }
+    }
+    return [pscustomobject]@{ Descriptors = $ok; Skipped = $skipped }
+}
+
 # Baut aus einem Zugriffseintrag in Textform das AD-Zugriffsobjekt.
 function New-CaroAdRule {
     param(
@@ -1478,12 +1601,13 @@ function Get-CaroMissingRules {
     $acl = Get-Acl -Path ('AD:' + $p.TargetDn)
     $missing = @()
     $total = 0
-    foreach ($d in (Expand-CaroAceSpec -Spec $p.Spec)) {
+    $split = Split-CaroUnknownAttributes -Descriptors @(Expand-CaroAceSpec -Spec $p.Spec)
+    foreach ($d in $split.Descriptors) {
         $total++
         $rule = New-CaroAdRule -Sid $Sid -Descriptor $d
         if (-not (Test-CaroAclContainsRule -Acl $acl -Rule $rule)) { $missing += $rule }
     }
-    return [pscustomobject]@{ Acl = $acl; Missing = $missing; Total = $total }
+    return [pscustomobject]@{ Acl = $acl; Missing = $missing; Total = $total; Skipped = @($split.Skipped) }
 }
 
 # Zustand einer GrantAd-Aktion fuer die Plan-Phase: Neu, Teilweise vorhanden oder Vorhanden.
@@ -1514,7 +1638,7 @@ function Invoke-CaroGrantAd {
         }
         Set-Acl -Path ('AD:' + $p.TargetDn) -AclObject $m.Acl -ErrorAction Stop
     }
-    return [pscustomobject]@{ Created = $created; Total = $m.Total }
+    return [pscustomobject]@{ Created = $created; Total = $m.Total; Skipped = @($m.Skipped) }
 }
 
 # Entfernt einen zuvor gesetzten Zugriffseintrag wieder. Liefert 'Removed' oder 'NotFound'.
@@ -1576,18 +1700,19 @@ function Show-CaroOverview {
     Write-CaroMessage -Message '1) Active Directory: Je Bereich geben Sie die OU(s) an, in denen CARO arbeiten darf.' -Level 'TITLE'
     foreach ($role in (Get-CaroRoleCatalog)) {
         Write-Host ''
-        Write-Host ('   {0}' -f $role.Title) -ForegroundColor White
+        Write-Host ('   {0}' -f $role.Title.ToUpper()) -ForegroundColor White
         Write-Host ('   {0}' -f $role.Purpose) -ForegroundColor Gray
         foreach ($f in $role.Functions) {
-            if ($f.Key -eq 'SubOus') { continue }
-            Write-Host ('     - {0}' -f $f.Title) -ForegroundColor Gray
+            Write-Host ('     - {0} ({1})' -f $f.Title, $f.Right) -ForegroundColor Gray
         }
     }
     Write-Host ''
     Write-CaroMessage -Message '2) Exchange (optional, On-Premises): Rollengruppe "Organization Management" (Verwalten) oder "View-Only Organization Management" (nur Analysen).' -Level 'INFO'
     Write-CaroMessage -Message '3) Fileserver (optional): lokale Gruppen "Backup Operators" und "Print Operators" (Lesen), zusaetzlich "Administrators" (Verwalten).' -Level 'INFO'
-    Write-CaroMessage -Message '4) Immer: Der Account wird lokaler Administrator auf diesem CARO-Server.' -Level 'INFO'
-    Write-CaroMessage -Message '5) Kennwort: wird generiert und einmal angezeigt oder von Ihnen eingegeben. Es wird nie gespeichert oder protokolliert.' -Level 'INFO'
+    Write-CaroMessage -Message '4) Datenbank (optional): Konto fuer die SQL-Datenbank von CARO, mit DB-Owner (db_owner) oder DB-Creator (dbcreator), als Windows- oder SQL-Konto.' -Level 'INFO'
+    Write-CaroMessage -Message '5) Immer, wenn der Account AD, Exchange oder Fileserver bedient: Er wird lokaler Administrator auf diesem CARO-Server.' -Level 'INFO'
+    Write-CaroMessage -Message '6) Kennwort: wird generiert und einmal angezeigt oder von Ihnen eingegeben. Es wird nie gespeichert oder protokolliert.' -Level 'INFO'
+    Write-CaroMessage -Message 'Sie waehlen gleich, fuer welche Bereiche dieser Account sein soll. Fuer weitere Accounts rufen Sie das Skript erneut auf.' -Level 'INFO'
     Write-Host ''
     Write-CaroMessage -Message 'Am Ende sehen Sie eine Zusammenfassung aller Aktionen (Was, Wo, Warum). Erst dann entscheiden Sie ueber Apply.' -Level 'INFO'
     Write-CaroMessage -Message 'Nicht Teil dieses Skripts: Observer-Voraussetzungen auf den Domaenencontrollern, Entra ID und Exchange Online (App-Registrierung).' -Level 'INFO'
@@ -1672,8 +1797,21 @@ function Read-CaroOuInput {
     return $result
 }
 
+# Vorschlag fuer den Kontonamen: sa-caro plus Kuerzel der Bereiche in fester Reihenfolge (ad, fs, ex, db),
+# z. B. sa-caro-ad, sa-caro-db oder sa-caro-adfs.
+function Get-CaroDefaultAccountName {
+    param([Parameter(Mandatory = $true)][string[]]$Areas)
+    $suffix = ''
+    foreach ($pair in @(@('AD', 'ad'), @('Fileserver', 'fs'), @('Exchange', 'ex'), @('Database', 'db'))) {
+        if ($Areas -contains $pair[0]) { $suffix += $pair[1] }
+    }
+    if (-not $suffix) { return 'sa-caro' }
+    return ('sa-caro-' + $suffix)
+}
+
 # Account-Daten abfragen, einschliesslich Umgang mit einem bereits vorhandenen Account.
 function Read-CaroAccountSettings {
+    param([string]$DefaultSam = 'sa-caro')
     Write-CaroHeading -Text 'SERVICE-ACCOUNT'
     $samValidator = {
         param($v)
@@ -1682,7 +1820,7 @@ function Read-CaroAccountSettings {
         }
         return $null
     }
-    $sam = Read-CaroText -Prompt 'SamAccountName des Service-Accounts' -Default 'sa-service-caro' -Validator $samValidator
+    $sam = Read-CaroText -Prompt 'SamAccountName des Service-Accounts' -Default $DefaultSam -Validator $samValidator
 
     $adopt = $false
     $existing = $null
@@ -1701,6 +1839,7 @@ function Read-CaroAccountSettings {
     }
 
     $result = @{
+        Kind                 = 'Windows'
         Sam                  = $sam
         DisplayName          = $sam
         Description          = ''
@@ -1734,16 +1873,7 @@ function Read-CaroAccountSettings {
     return $result
 }
 
-# Basis-OU fuer Vorschlaege (optional).
-function Read-CaroBaseOu {
-    Write-Host ''
-    Write-CaroMessage -Message 'Optional: Wenn alle CARO-OUs unter einer gemeinsamen OU liegen (z. B. OU=CARO), schlage ich die Unter-OUs "Benutzer", "Gruppen" und "Deaktivierte Benutzer" vor.' -Level 'INFO'
-    $base = @(Read-CaroOuInput -Prompt 'Basis-OU (Enter = keine)' -AllowEmpty)
-    if ($base.Count -eq 0) { return '' }
-    return $base[0]
-}
-
-# Zeigt die Funktionen eines Bereichs mit Erklaerung und dem dafuer vergebenen Recht.
+# Zeigt die Funktionen eines Bereichs: deutscher Name und Windows-Begriff des Rechts.
 function Show-CaroFunctionList {
     param(
         [Parameter(Mandatory = $true)][object[]]$Functions,
@@ -1753,8 +1883,7 @@ function Show-CaroFunctionList {
     foreach ($f in $Functions) {
         $i++
         if ($Numbered) { $mark = '[{0}]' -f $i } else { $mark = '-' }
-        Write-Host ('  {0} {1}' -f $mark, $f.Title) -ForegroundColor White
-        Write-Host ('      {0}' -f $f.Explain) -ForegroundColor Gray
+        Write-Host ('  {0} {1} ({2})' -f $mark, $f.Title, $f.Right) -ForegroundColor White
     }
 }
 
@@ -1801,20 +1930,23 @@ function Confirm-CaroDomainWide {
     return $ok
 }
 
-# OUs fuer eine Rolle abfragen: bestimmte OUs (mit Schleife) oder die ganze Domaene.
+# Wo darf CARO in diesem Bereich arbeiten? [1] bestimmte OUs (mit Schleife), [2] ganze Domaene, [3] gar nicht.
+# Liefert @{ Targets; DomainWide } oder $null, wenn der Bereich nicht eingerichtet werden soll.
 function Read-CaroOuTargets {
     param(
         [Parameter(Mandatory = $true)]$Role,
-        [string]$BaseOu = '',
-        [bool]$Dangerous = $false
+        [bool]$Dangerous = $false,
+        [string]$DefaultScope = '1'
     )
     $options = @(
-        [pscustomobject]@{ Key = '1'; Label = 'Bestimmte OUs'; Explain = "Die Rechte gelten nur in den OUs, die Sie angeben, und allen darunterliegenden Objekten." },
-        [pscustomobject]@{ Key = '2'; Label = 'Ganze Domaene'; Explain = "ACHTUNG: Die Rechte gelten fuer ALLE passenden Objekte der gesamten Domaene." }
+        [pscustomobject]@{ Key = '1'; Label = 'In bestimmten OUs'; Explain = 'Schliesst alle untergeordneten OUs ein.' },
+        [pscustomobject]@{ Key = '2'; Label = 'In der ganzen Domaene'; Explain = 'ACHTUNG: gilt fuer ALLE passenden Objekte der gesamten Domaene.' },
+        [pscustomobject]@{ Key = '3'; Label = 'Gar nicht'; Explain = 'Diesen Bereich nicht einrichten.' }
     )
     $dom = Get-CaroDomainInfo
     while ($true) {
-        $scope = Read-CaroChoice -Title ('{0}: Wo darf CARO arbeiten?' -f $role.Title) -Options $options -Default '1'
+        $scope = Read-CaroChoice -Title ('{0}: Wo darf CARO das tun?' -f $role.Title) -Options $options -Default $DefaultScope
+        if ($scope -eq '3') { return $null }
         if ($scope -eq '2') {
             if (-not (Confirm-CaroDomainWide -Domain $dom -Dangerous $Dangerous)) { continue }
             return @{ Targets = @($dom.Dn); DomainWide = $true }
@@ -1823,16 +1955,11 @@ function Read-CaroOuTargets {
     }
 
     $targets = @()
-    $default = ''
-    if ($BaseOu -and $role.BaseSuffix) {
-        $cand = 'OU={0},{1}' -f $role.BaseSuffix, $BaseOu
-        if (Get-CaroOuDn -Dn $cand) { $default = $cand }
-    }
-    Write-CaroMessage -Message $role.Question -Level 'INFO'
+    Write-CaroMessage -Message 'In welcher OU soll das erfolgen? (Hinweis: Das schliesst untergeordnete OUs mit ein)' -Level 'INFO'
     while ($true) {
-        foreach ($dn in @(Read-CaroOuInput -Prompt 'OU' -DefaultDn $default -Multiple)) {
+        foreach ($dn in @(Read-CaroOuInput -Prompt 'OU' -Multiple)) {
             if ($dn -ieq $dom.Dn) {
-                Write-CaroMessage -Message 'Sie haben die Domaene selbst eingegeben. Das entspricht der Auswahl "Ganze Domaene".' -Level 'WARN'
+                Write-CaroMessage -Message 'Sie haben die Domaene selbst eingegeben. Das entspricht der Auswahl "In der ganzen Domaene".' -Level 'WARN'
                 if (Confirm-CaroDomainWide -Domain $dom -Dangerous $Dangerous) {
                     return @{ Targets = @($dom.Dn); DomainWide = $true }
                 }
@@ -1841,7 +1968,6 @@ function Read-CaroOuTargets {
             }
             if ($targets -notcontains $dn) { $targets += $dn }
         }
-        $default = ''
         # Noch keine OU uebernommen (z. B. Domaene abgelehnt): erneut nach einer OU fragen, nicht nach "weiteren" OUs.
         if ($targets.Count -eq 0) { continue }
         Write-CaroMessage -Message ('Bisher fuer {0}: {1}' -f $role.Title, ($targets -join '; ')) -Level 'INFO'
@@ -1850,66 +1976,49 @@ function Read-CaroOuTargets {
     return @{ Targets = @($targets); DomainWide = $false }
 }
 
-# Fragt alle AD-Rollen ab.
+# Fragt alle AD-Bereiche ab: kurzer Satz, was CARO tut, dann wo, danach die Rechte als Bestaetigung.
 function Read-CaroRoleSettings {
     param([Parameter(Mandatory = $true)][string]$Profile)
     Write-CaroHeading -Text 'ACTIVE DIRECTORY: WO DARF CARO ARBEITEN?'
-    $baseOu = Read-CaroBaseOu
     $roles = @{}
-    $subOus = $false
 
     foreach ($role in (Get-CaroRoleCatalog)) {
+        $off = @{ Enabled = $false; Targets = @(); DomainWide = $false; Functions = @() }
+
+        # "Weitere Gruppen fuer neue Benutzer" gibt es nur, wenn CARO Benutzer anlegen darf.
+        if ($role.Key -eq 'MembershipOU') {
+            $uo = $roles['UserOU']
+            if (-not $uo -or -not $uo.Enabled -or (@($uo.Functions) -notcontains 'CreateUser')) { $roles[$role.Key] = $off; continue }
+        }
+
         Write-Host ''
         Write-Host ('-' * 78) -ForegroundColor DarkCyan
         Write-CaroMessage -Message $role.Title.ToUpper() -Level 'TITLE'
         Write-CaroMessage -Message $role.Purpose -Level 'INFO'
 
-        if ($role.Key -eq 'MembershipOU') {
-            $uo = $roles['UserOU']
-            if (-not $uo -or -not $uo.Enabled -or (@($uo.Functions) -notcontains 'CreateUser')) { continue }
-        }
-
-        # Erst zeigen, was CARO dafuer bekommt, danach fragen: Die Zuordnung steht direkt vor der Frage.
-        $selectable = @($role.Functions | Where-Object { $_.Key -ne 'SubOus' })
-        Write-Host ''
-        Write-CaroMessage -Message 'Dafuer bekommt der Service-Account diese Rechte:' -Level 'INFO'
-        Show-CaroFunctionList -Functions $selectable -Numbered:($Profile -eq 'Custom')
-        Write-Host ''
-
-        if ($role.Key -eq 'MembershipOU') {
-            $ask = 'Sollen neue Benutzer beim Anlegen automatisch in Gruppen eingetragen werden, die AUSSERHALB der Gruppen-OU liegen (mit den oben genannten Rechten)?'
-            $use = Read-CaroYesNo -Prompt $ask -Default $false
-        }
-        else {
-            $use = Read-CaroYesNo -Prompt $role.Ask -Default $true
-        }
-        if (-not $use) {
-            $roles[$role.Key] = @{ Enabled = $false; Targets = @(); DomainWide = $false; Functions = @() }
-            continue
-        }
-
+        $all = @($role.Functions)
         if ($Profile -eq 'Custom') {
-            $keys = @(Read-CaroFunctionSelection -Functions $selectable)
+            Write-Host ''
+            Write-CaroMessage -Message 'Welche Funktionen soll CARO hier haben?' -Level 'INFO'
+            Show-CaroFunctionList -Functions $all -Numbered
+            $keys = @(Read-CaroFunctionSelection -Functions $all)
         }
         else {
-            $keys = @($selectable | ForEach-Object { $_.Key })
-        }
-
-        if ($role.Key -eq 'GroupOU' -and ($keys -contains 'CreateGroup')) {
-            Write-Host ''
-            Write-CaroMessage -Message 'Smart Permissions kann pro Fileserver eine eigene Unter-OU in der Gruppen-OU anlegen (Einstellung "Unter-OU mit dem Server-Namen"). Dafuer braucht der Account zusaetzlich das Recht, OUs anzulegen und zu loeschen.' -Level 'INFO'
-            if (Read-CaroYesNo -Prompt 'Legt CARO Unter-OUs in der Gruppen-OU an?' -Default $false) {
-                $keys += 'SubOus'
-                $subOus = $true
-            }
+            $keys = @($all | ForEach-Object { $_.Key })
         }
 
         $dangerous = $false
         foreach ($k in $keys) { if ($k -in @('CreateUser', 'DeleteUser', 'MoveUser', 'ReceiveUsers')) { $dangerous = $true } }
-        $t = Read-CaroOuTargets -Role $role -BaseOu $baseOu -Dangerous $dangerous
+        $t = Read-CaroOuTargets -Role $role -Dangerous $dangerous -DefaultScope $role.DefaultScope
+        if (-not $t) { $roles[$role.Key] = $off; continue }
         $roles[$role.Key] = @{ Enabled = $true; Targets = @($t.Targets); DomainWide = [bool]$t.DomainWide; Functions = @($keys) }
+
+        Write-Host ''
+        if ($t.DomainWide) { $where = 'in der ganzen Domaene' } else { $where = 'in diesen OUs' }
+        Write-CaroMessage -Message ('Dafuer bekommt der Service-Account {0}:' -f $where) -Level 'INFO'
+        Show-CaroFunctionList -Functions @($all | Where-Object { $keys -contains $_.Key })
     }
-    return @{ Roles = $roles; SubOus = $subOus }
+    return @{ Roles = $roles }
 }
 
 # Braucht irgendeine gewaehlte Funktion Benutzer-Eigenschaften (dann ist die Attribut-Strategie zu waehlen)?
@@ -1972,7 +2081,6 @@ function Read-CaroExchangeChoice {
     Write-CaroHeading -Text 'EXCHANGE (ON-PREMISES)'
     Write-CaroMessage -Message 'Hinweis: Exchange Online und Entra ID werden in CARO ueber die App-Registrierung "CARO-Suite M365 Connector" angebunden, nicht ueber dieses Skript.' -Level 'INFO'
     $default = '2'
-    if ($Profile -eq 'Custom') { $default = '1' }
     $options = @(
         [pscustomobject]@{ Key = '1'; Label = 'Kein Exchange'; Explain = 'Es wird nichts in Exchange geaendert.' },
         [pscustomobject]@{ Key = '2'; Label = "Management (Rollengruppe 'Organization Management')"; Explain = "CARO kann Exchange verwalten: Postfaecher aktivieren oder erstellen, Abwesenheitsnotizen,`nVollzugriff, Senden-als, Limits, SMTP-Adressen. Der Account wird Mitglied der Rollengruppe." },
@@ -2002,7 +2110,6 @@ function Read-CaroFileserverChoice {
     param([Parameter(Mandatory = $true)][string]$Profile)
     Write-CaroHeading -Text 'FILESERVER'
     $default = '3'
-    if ($Profile -eq 'Custom') { $default = '1' }
     $options = @(
         [pscustomobject]@{ Key = '1'; Label = 'Kein Fileserver'; Explain = 'Es wird auf keinem Fileserver etwas geaendert.' },
         [pscustomobject]@{ Key = '2'; Label = 'Lesen'; Explain = "Der Account wird in 'Backup Operators' und 'Print Operators' des Fileservers aufgenommen.`nCARO kann Berechtigungen und Freigaben (Share-Permissions) auslesen." },
@@ -2037,7 +2144,8 @@ function Add-CaroPlanState {
     )
     $warnings = New-Object System.Collections.ArrayList
     $sam = $Settings.Account.Sam
-    $existing = Get-CaroExistingAccount -Sam $sam
+    $existing = $null
+    if ($Settings.Account.Kind -ne 'Sql') { $existing = Get-CaroExistingAccount -Sam $sam }
     $sid = $null
     if ($existing) { $sid = ConvertTo-CaroSid -Value $existing.SID.Value }
 
@@ -2077,6 +2185,25 @@ function Add-CaroPlanState {
                 'GrantAd' {
                     if ($sid) { $a.PlanState = Get-CaroAdActionState -Action $a -Sid $sid } else { $a.PlanState = 'Neu' }
                 }
+                'SqlCreateDatabase' {
+                    if (Test-CaroSqlDatabaseExists -Server $a.Params.Server -Instance $a.Params.Instance -DbName $a.Params.DbName) { $a.PlanState = 'Vorhanden' } else { $a.PlanState = 'Neu' }
+                }
+                'SqlCreateLogin' {
+                    if (Test-CaroSqlLoginExists -Server $a.Params.Server -Instance $a.Params.Instance -LoginName $a.Params.LoginName) { $a.PlanState = 'Vorhanden' } else { $a.PlanState = 'Neu' }
+                }
+                'SqlGrantRole' {
+                    $a.PlanState = 'Neu'
+                    if ($a.Params.Right -eq 'DbOwner') {
+                        if (Test-CaroSqlDatabaseExists -Server $a.Params.Server -Instance $a.Params.Instance -DbName $a.Params.DbName) {
+                            $st = Test-CaroSqlDbOwnerMember -Server $a.Params.Server -Instance $a.Params.Instance -DbName $a.Params.DbName -LoginName $a.Params.LoginName
+                            if ($st.IsOwner) { $a.PlanState = 'Vorhanden' }
+                        }
+                    }
+                    elseif (Test-CaroSqlLoginExists -Server $a.Params.Server -Instance $a.Params.Instance -LoginName $a.Params.LoginName) {
+                        if (Test-CaroSqlDbCreatorMember -Server $a.Params.Server -Instance $a.Params.Instance -LoginName $a.Params.LoginName) { $a.PlanState = 'Vorhanden' }
+                    }
+                }
+                'WriteSqlScript' { $a.PlanState = 'Neu' }
             }
         }
         catch {
@@ -2085,6 +2212,183 @@ function Add-CaroPlanState {
         }
     }
     return @($warnings)
+}
+
+# Fuer welche Bereiche soll dieser Service-Account sein? Freie Mehrfachauswahl mit Nummern.
+function Read-CaroAreaSelection {
+    $areas = @(
+        [pscustomobject]@{ Key = 'AD'; Title = 'Active Directory' },
+        [pscustomobject]@{ Key = 'Fileserver'; Title = 'Fileserver' },
+        [pscustomobject]@{ Key = 'Exchange'; Title = 'Exchange' },
+        [pscustomobject]@{ Key = 'Database'; Title = 'Datenbank (SQL Server)' }
+    )
+    while ($true) {
+        Write-Host ''
+        Write-CaroMessage -Message 'Fuer welche Bereiche soll dieser Service-Account sein?' -Level 'TITLE'
+        $i = 0
+        foreach ($a in $areas) { $i++; Write-Host ('  [{0}] {1}' -f $i, $a.Title) -ForegroundColor White }
+        Write-CaroMessage -Message 'Hinweis: Fuer weitere Accounts rufen Sie das Skript erneut auf.' -Level 'INFO'
+        $answer = (Read-CaroInput -Prompt 'Nummern, durch Komma getrennt (Enter = 1,2,3)').Trim()
+        if (-not $answer) { return @('AD', 'Fileserver', 'Exchange') }
+        $picked = @()
+        $bad = $false
+        foreach ($part in ($answer -split '[,; ]+')) {
+            if (-not $part) { continue }
+            $n = 0
+            if ([int]::TryParse($part, [ref]$n) -and $n -ge 1 -and $n -le $areas.Count) { $picked += $n } else { $bad = $true }
+        }
+        if ($bad -or $picked.Count -eq 0) {
+            Write-CaroMessage -Message ('Ungueltige Eingabe. Bitte Nummern von 1 bis {0} angeben, getrennt durch Komma.' -f $areas.Count) -Level 'WARN'
+            continue
+        }
+        $result = @()
+        for ($k = 1; $k -le $areas.Count; $k++) { if ($picked -contains $k) { $result += $areas[$k - 1].Key } }
+        return $result
+    }
+}
+
+# Fragt einen Bereich ab, zeigt eine Zusammenfassung und fragt "Diese Angaben uebernehmen?". Bei "Nein" wird nur
+# dieser Bereich noch einmal abgefragt. Ein Ergebnis mit Abort = $true bricht den Plan ab.
+function Confirm-CaroArea {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Read,
+        [scriptblock]$Summary = $null
+    )
+    while ($true) {
+        $r = & $Read
+        if ($r -is [System.Collections.IDictionary] -and $r.Contains('Abort') -and $r.Abort) { return $r }
+        if ($Summary) {
+            Write-Host ''
+            & $Summary $r
+        }
+        if (Read-CaroYesNo -Prompt 'Diese Angaben uebernehmen?' -Default $true) { return $r }
+        Write-CaroMessage -Message 'Dieser Bereich wird noch einmal abgefragt.' -Level 'INFO'
+    }
+}
+
+# Konto fuer den reinen Datenbank-Account: SQL-Konto (kein AD-Konto).
+function Read-CaroSqlAccountSettings {
+    param([string]$DefaultName = 'sa-caro-db')
+    Write-CaroHeading -Text 'SQL-KONTO'
+    $validator = {
+        param($v)
+        if ($v -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') { return 'Ungueltig. Erlaubt sind Buchstaben, Ziffern, Punkt, Unterstrich und Bindestrich.' }
+        return $null
+    }
+    $name = Read-CaroText -Prompt 'Name des SQL-Kontos' -Default $DefaultName -Validator $validator
+    $pwOptions = @(
+        [pscustomobject]@{ Key = '1'; Label = 'Kennwort generieren'; Explain = 'Wird erzeugt und genau EINMAL angezeigt.' },
+        [pscustomobject]@{ Key = '2'; Label = 'Kennwort selbst eingeben'; Explain = 'Verdeckt, mit Wiederholung.' }
+    )
+    $pw = Read-CaroChoice -Title 'Wie soll das Kennwort des SQL-Kontos entstehen? (Es wird nie gespeichert oder protokolliert.)' -Options $pwOptions -Default '1'
+    if ($pw -eq '1') { $mode = 'Generate' } else { $mode = 'Manual' }
+    return @{ Kind = 'Sql'; Sam = $name; DisplayName = $name; Description = ''; TargetOu = ''; Adopt = $false; PasswordMode = $mode; PasswordNeverExpires = $false }
+}
+
+# Bereich Datenbank: Rechte (DB-Owner oder DB-Creator), Art der Vergabe, Server, Datenbank.
+# Liefert die Einstellungen oder @{ Abort = $true }.
+function Read-CaroDatabaseSettings {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Windows', 'Sql')][string]$AccountKind,
+        [Parameter(Mandatory = $true)][string]$AccountSam
+    )
+    Write-CaroHeading -Text 'DATENBANK (SQL SERVER)'
+    Write-CaroMessage -Message 'CARO schreibt seine Daten in eine SQL-Datenbank. Dieses Konto bekommt dafuer die noetigen Rechte. Server, Instanz und Datenbankname tragen Sie spaeter im CARO-Configurator ein.' -Level 'INFO'
+    $login = $AccountSam
+    $netbios = ''
+    if ($AccountKind -eq 'Windows') {
+        $d = Get-CaroDomainInfo
+        $netbios = $d.NetBios
+        $login = '{0}\{1}' -f $netbios, $AccountSam
+    }
+    $dbValidator = {
+        param($v)
+        if ($v -notmatch '^[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}$') { return 'Ungueltig. Erlaubt sind Buchstaben, Ziffern, Unterstrich, Punkt, Bindestrich und Leerzeichen.' }
+        return $null
+    }
+    $hostValidator = {
+        param($v)
+        if ($v -notmatch '^[A-Za-z0-9._-]+$') { return 'Ungueltig. Bitte nur den Rechnernamen angeben, ohne Instanz.' }
+        return $null
+    }
+    $instValidator = {
+        param($v)
+        if ($v -notmatch '^[A-Za-z0-9_$#-]+$') { return 'Ungueltig. Bitte nur den Instanznamen angeben.' }
+        return $null
+    }
+
+    while ($true) {
+        $rightOptions = @(
+            [pscustomobject]@{ Key = '1'; Label = 'DB-Owner (db_owner)'; Explain = "Rechte nur auf der CARO-Datenbank. Das Skript legt die Datenbank bei Bedarf selbst an.`nEmpfohlen: das kleinere Recht." },
+            [pscustomobject]@{ Key = '2'; Label = 'DB-Creator (dbcreator)'; Explain = "Server-Recht: Der CARO-Configurator legt die Datenbank selbst an.`nGroesseres Recht auf dem ganzen SQL-Server." }
+        )
+        $rk = Read-CaroChoice -Title 'Welche Rechte soll das Konto in SQL bekommen?' -Options $rightOptions -Default '1'
+        if ($rk -eq '1') { $right = 'DbOwner' } else { $right = 'DbCreator' }
+
+        $modeOptions = @(
+            [pscustomobject]@{ Key = '1'; Label = 'Das Skript vergibt die Rechte direkt im SQL-Server'; Explain = 'Sie brauchen dafuer sysadmin-Rechte im SQL-Server.' },
+            [pscustomobject]@{ Key = '2'; Label = 'SQL-Datei fuer den DBA erzeugen'; Explain = 'Das Skript aendert nichts im SQL-Server. Der DBA fuehrt die Datei aus.' }
+        )
+        if ($AccountKind -eq 'Windows') {
+            $modeOptions += [pscustomobject]@{ Key = '3'; Label = 'Gar nicht (nur das Konto anlegen)'; Explain = 'Die SQL-Rechte vergibt jemand anderes.' }
+        }
+        $mk = Read-CaroChoice -Title 'Wie sollen die SQL-Rechte vergeben werden?' -Options $modeOptions -Default '1'
+        switch ($mk) { '1' { $mode = 'Direct' } '2' { $mode = 'DbaScript' } default { $mode = 'None' } }
+
+        $result = @{ Enabled = $true; AccountType = $AccountKind; Right = $right; Mode = $mode; SqlServer = ''; Instance = ''; DbName = ''; CreateDatabase = $false; LoginName = $login; DomainNetBios = $netbios }
+        if ($mode -eq 'None') { return $result }
+
+        $back = $false
+        if ($mode -eq 'Direct') {
+            while ($true) {
+                $server = Read-CaroText -Prompt 'SQL-Server (Rechnername)' -Validator $hostValidator
+                $instance = Read-CaroText -Prompt 'Instanz (Enter = Standardinstanz)' -AllowEmpty -Validator $instValidator
+                $problem = ''
+                $kind = 'ok'
+                $conn = Test-CaroSqlConnection -Server $server -Instance $instance
+                if (-not $conn.Ok) {
+                    $kind = 'connection'
+                    $problem = 'Mit dem SQL-Server {0} konnte keine Verbindung hergestellt werden: {1}' -f (Get-CaroSqlInstanceName -Server $server -Instance $instance), $conn.Detail
+                }
+                elseif (-not (Test-CaroSqlSysadmin -Server $server -Instance $instance)) {
+                    $kind = 'rights'
+                    $problem = 'Ihr Konto hat im SQL-Server keine sysadmin-Rechte. Damit kann das Skript Datenbank, Login und Rechte nicht selbst vergeben.'
+                }
+                if ($kind -eq 'ok') { break }
+
+                Write-CaroMessage -Message $problem -Level 'WARN'
+                $actions = @()
+                if ($kind -eq 'connection') { $actions += @{ Id = 'retry'; Label = 'Server und Instanz neu eingeben' } }
+                $actions += @{ Id = 'back'; Label = 'Andere Option waehlen (zurueck zu den Rechten)' }
+                $actions += @{ Id = 'script'; Label = 'SQL-Datei fuer den DBA erzeugen' }
+                $actions += @{ Id = 'abort'; Label = 'Abbrechen' }
+                $opts = @()
+                $n = 0
+                foreach ($a in $actions) { $n++; $opts += [pscustomobject]@{ Key = [string]$n; Label = $a.Label; Explain = '' } }
+                $c = Read-CaroChoice -Title 'Was moechten Sie tun?' -Options $opts
+                $act = $actions[[int]$c - 1].Id
+                if ($act -eq 'retry') { continue }
+                if ($act -eq 'abort') { return @{ Abort = $true } }
+                if ($act -eq 'back') { $back = $true; break }
+                $mode = 'DbaScript'
+                $result.Mode = 'DbaScript'
+                break
+            }
+            if ($back) { continue }
+            if ($mode -eq 'Direct') { $result.SqlServer = $server; $result.Instance = $instance }
+        }
+
+        if ($right -eq 'DbOwner') {
+            while ($true) {
+                $dbName = Read-CaroText -Prompt 'Name der CARO-Datenbank' -Default 'CARO' -Validator $dbValidator
+                if ($mode -ne 'Direct') { $result.CreateDatabase = $true; break }
+                if (Test-CaroSqlDatabaseExists -Server $result.SqlServer -Instance $result.Instance -DbName $dbName) { $result.CreateDatabase = $false; break }
+                if (Read-CaroYesNo -Prompt ("Die Datenbank '{0}' existiert nicht. Soll das Skript sie anlegen?" -f $dbName) -Default $true) { $result.CreateDatabase = $true; break }
+            }
+            $result.DbName = $dbName
+        }
+        return $result
+    }
 }
 
 # Der komplette Plan. Liefert den Pfad der Config-Datei oder $null bei Abbruch.
@@ -2098,50 +2402,138 @@ function Invoke-CaroPlan {
 
     Show-CaroOverview
 
-    $profileOptions = @(
-        [pscustomobject]@{ Key = '1'; Label = 'Voller CARO-Umfang (empfohlen)'; Explain = "Alle Funktionen der oben gezeigten Bereiche. Die Rechte gelten nur in den OUs, die Sie angeben." },
-        [pscustomobject]@{ Key = '2'; Label = 'Anpassen'; Explain = "Sie waehlen je Bereich einzelne Funktionen. Fuer Fortgeschrittene." }
-    )
-    $p = Read-CaroChoice -Title 'Welches Profil moechten Sie verwenden?' -Options $profileOptions -Default '1'
-    if ($p -eq '1') { $profileName = 'Full' } else { $profileName = 'Custom' }
-    Write-CaroLog -Level 'INFO' -Message ('Profil: {0}' -f $profileName)
+    # Fuer welche Bereiche soll dieser Account sein?
+    $areas = @(Read-CaroAreaSelection)
+    Write-CaroLog -Level 'INFO' -Message ('Bereiche: {0}' -f ($areas -join ', '))
+    $hasAd = $areas -contains 'AD'
+    $hasFs = $areas -contains 'Fileserver'
+    $hasEx = $areas -contains 'Exchange'
+    $hasDb = $areas -contains 'Database'
 
-    $account = Read-CaroAccountSettings
-
-    $rs = Read-CaroRoleSettings -Profile $profileName
-    $attrMode = ''
-    $fileAttrs = @()
-    if (Test-CaroNeedsAttributeChoice -Roles $rs.Roles) {
-        $strategy = Read-CaroAttributeStrategy
-        if (-not $strategy) { return $null }
-        $attrMode = $strategy.Mode
-        $fileAttrs = @($strategy.FileAttributes)
+    $profileName = 'Full'
+    if ($hasAd) {
+        $profileOptions = @(
+            [pscustomobject]@{ Key = '1'; Label = 'Voller CARO-Umfang (empfohlen)'; Explain = "Alle Funktionen der oben gezeigten Bereiche. Die Rechte gelten nur in den OUs, die Sie angeben." },
+            [pscustomobject]@{ Key = '2'; Label = 'Anpassen'; Explain = "Sie waehlen je Bereich einzelne Funktionen. Fuer Fortgeschrittene." }
+        )
+        $p = Read-CaroChoice -Title 'Welches Profil moechten Sie fuer Active Directory verwenden?' -Options $profileOptions -Default '1'
+        if ($p -eq '2') { $profileName = 'Custom' }
+        Write-CaroLog -Level 'INFO' -Message ('Profil: {0}' -f $profileName)
     }
 
-    $exchange = Read-CaroExchangeChoice -Profile $profileName
-    $fs = Read-CaroFileserverChoice -Profile $profileName
+    # Konto: AD-Konto (Windows) oder, bei einem reinen Datenbank-Account, wahlweise ein SQL-Konto
+    $dbOnly = ($areas.Count -eq 1 -and $hasDb)
+    $accountKind = 'Windows'
+    if ($dbOnly) {
+        $kindOptions = @(
+            [pscustomobject]@{ Key = '1'; Label = 'Windows-Konto'; Explain = 'Ein neues AD-Konto, das Zugriff auf den SQL-Server bekommt.' },
+            [pscustomobject]@{ Key = '2'; Label = 'SQL-Konto'; Explain = 'Ein SQL-Login mit Kennwort, ohne AD-Konto.' }
+        )
+        $kk = Read-CaroChoice -Title 'Welche Art von Konto soll CARO fuer die Datenbank verwenden?' -Options $kindOptions -Default '1'
+        if ($kk -eq '2') { $accountKind = 'Sql' }
+    }
+    $defaultSam = Get-CaroDefaultAccountName -Areas $areas
+    if ($accountKind -eq 'Sql') {
+        $account = Read-CaroSqlAccountSettings -DefaultName $defaultSam
+    }
+    else {
+        $account = Read-CaroAccountSettings -DefaultSam $defaultSam
+    }
 
-    $enabledRoles = @($rs.Roles.Values | Where-Object { $_.Enabled })
-    if ($enabledRoles.Count -eq 0 -and $exchange -eq 'None' -and $fs.Mode -eq 'None') {
+    # Active Directory
+    $roles = @{}
+    $attrMode = ''
+    $fileAttrs = @()
+    $attrWarnings = @()
+    if ($hasAd) {
+        $adResult = Confirm-CaroArea -Read {
+            $rs = Read-CaroRoleSettings -Profile $profileName
+            $res = @{ Roles = $rs.Roles; AttrMode = ''; FileAttrs = @(); Warnings = @() }
+            if (Test-CaroNeedsAttributeChoice -Roles $rs.Roles) {
+                $strategy = Read-CaroAttributeStrategy
+                if (-not $strategy) { return @{ Abort = $true } }
+                $res.AttrMode = $strategy.Mode
+                $res.FileAttrs = @($strategy.FileAttributes)
+                if ($res.AttrMode -eq 'List' -and $res.FileAttrs.Count -gt 0) {
+                    # Attribute, die es in diesem AD nicht gibt (z. B. extensionAttribute1-15 ohne Exchange-Schemaerweiterung), nicht freigeben.
+                    $split = Select-CaroExistingAttributes -Names $res.FileAttrs
+                    $res.FileAttrs = @($split.Existing)
+                    if ($split.Missing.Count -gt 0) {
+                        $w = 'Diese Attribute gibt es in diesem Active Directory nicht und sie werden nicht freigegeben: {0}. (Erweiterungsattribute wie extensionAttribute1-15 entstehen erst durch die Exchange-Schemaerweiterung.) CARO kann diese Attribute dort nicht schreiben.' -f ($split.Missing -join ', ')
+                        Write-CaroMessage -Message ('HINWEIS: ' + $w) -Level 'WARN'
+                        $res.Warnings += $w
+                    }
+                }
+            }
+            return $res
+        } -Summary {
+            param($r)
+            Write-CaroMessage -Message 'Active Directory, Zusammenfassung:' -Level 'TITLE'
+            foreach ($role in (Get-CaroRoleCatalog)) {
+                $rs2 = $r.Roles[$role.Key]
+                if ($rs2 -and $rs2.Enabled) { Write-CaroMessage -Message ('  {0}: {1}' -f $role.Title, (@($rs2.Targets) -join '; ')) -Level 'INFO' }
+                else { Write-CaroMessage -Message ('  {0}: nicht eingerichtet' -f $role.Title) -Level 'INFO' }
+            }
+        }
+        if ($adResult.Abort) { return $null }
+        $roles = $adResult.Roles
+        $attrMode = $adResult.AttrMode
+        $fileAttrs = @($adResult.FileAttrs)
+        $attrWarnings = @($adResult.Warnings)
+    }
+
+    # Exchange
+    $exchange = 'None'
+    if ($hasEx) {
+        $exResult = Confirm-CaroArea -Read { @{ Value = (Read-CaroExchangeChoice -Profile $profileName) } } -Summary {
+            param($r)
+            Write-CaroMessage -Message ('Exchange: {0}' -f $r.Value) -Level 'INFO'
+        }
+        $exchange = $exResult.Value
+    }
+
+    # Fileserver
+    $fs = @{ Mode = 'None'; Servers = @() }
+    if ($hasFs) {
+        $fs = Confirm-CaroArea -Read { Read-CaroFileserverChoice -Profile $profileName } -Summary {
+            param($r)
+            Write-CaroMessage -Message ('Fileserver: {0} {1}' -f $r.Mode, (@($r.Servers) -join ', ')) -Level 'INFO'
+        }
+    }
+
+    # Datenbank
+    $database = @{ Enabled = $false }
+    if ($hasDb) {
+        $database = Confirm-CaroArea -Read { Read-CaroDatabaseSettings -AccountKind $accountKind -AccountSam $account.Sam } -Summary {
+            param($r)
+            Write-CaroMessage -Message ('Datenbank: {0}-Konto, {1}, Vergabe: {2} {3} {4}' -f $r.AccountType, $r.Right, $r.Mode, $r.SqlServer, $r.DbName) -Level 'INFO'
+        }
+        if ($database.Abort) { return $null }
+    }
+
+    $enabledRoles = @($roles.Values | Where-Object { $_.Enabled })
+    if ($enabledRoles.Count -eq 0 -and $exchange -eq 'None' -and $fs.Mode -eq 'None' -and -not $database.Enabled) {
         Write-CaroMessage -Message 'Es wurde keine Funktion gewaehlt. Es gibt nichts zu planen.' -Level 'ERROR'
         return $null
     }
 
     $settings = @{
         Profile        = $profileName
+        Areas          = $areas
         Account        = $account
         AttributeMode  = $attrMode
         FileAttributes = $fileAttrs
-        Roles          = $rs.Roles
-        SubOus         = [bool]$rs.SubOus
+        Roles          = $roles
         Exchange       = $exchange
         Fileserver     = $fs
+        Database       = $database
     }
     if (-not $settings.AttributeMode) { $settings.AttributeMode = 'List' }
 
     Write-CaroHeading -Text 'ZUSTAND PRUEFEN (nur lesend)'
     $actions = New-CaroActionList -Settings $settings
     $warnings = @(Add-CaroPlanState -Actions $actions -Settings $settings)
+    $warnings += $attrWarnings
     try {
         $dcs = @(Find-CaroDomainControllers -Actions $actions)
         $warnings += @(Get-CaroDomainControllerWarnings -Actions $actions -DomainControllers $dcs)
@@ -2156,6 +2548,11 @@ function Invoke-CaroPlan {
     if ($warnings.Count -gt 0) {
         Write-Host ''
         foreach ($w in $warnings) { Write-CaroMessage -Message ('WARNUNG: {0}' -f $w) -Level 'WARN' }
+    }
+    $hints = @(Get-CaroConfiguratorHints -Settings $settings)
+    if ($hints.Count -gt 0) {
+        Write-Host ''
+        foreach ($h in $hints) { Write-CaroMessage -Message $h -Level 'INFO' }
     }
 
     $configPath = New-CaroOutputPath -Type 'Config' -Extension 'json'
@@ -2233,7 +2630,7 @@ function Get-CaroAccountPassword {
 }
 
 function New-CaroEntry {
-    param($Action, [string]$Status, [string]$Message, $Rollback = $null)
+    param($Action, [string]$Status, [string]$Message, $Rollback = $null, [string[]]$Skipped = @())
     return [ordered]@{
         ActionId = $Action.Id
         Type     = $Action.Type
@@ -2242,6 +2639,7 @@ function New-CaroEntry {
         Status   = $Status
         Message  = $Message
         Rollback = $Rollback
+        Skipped  = @($Skipped)
     }
 }
 
@@ -2313,11 +2711,53 @@ function Invoke-CaroApplyAction {
                     $Context.Sid = ConvertTo-CaroSid -Value $acc.SID.Value
                 }
                 $g = Invoke-CaroGrantAd -Action $Action -Sid $Context.Sid
-                if (@($g.Created).Count -gt 0) {
-                    return (New-CaroEntry -Action $Action -Status 'Created' -Message ('{0} von {1} Zugriffseintraegen neu gesetzt.' -f @($g.Created).Count, $g.Total) `
-                            -Rollback ([ordered]@{ Rules = @($g.Created) }))
+                $skipNote = ''
+                if (@($g.Skipped).Count -gt 0) {
+                    $skipNote = ' Uebersprungen, weil es im AD-Schema nicht existiert: {0}.' -f (@($g.Skipped) -join ', ')
                 }
-                return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message ('Alle {0} Zugriffseintraege waren schon vorhanden.' -f $g.Total))
+                if (@($g.Created).Count -gt 0) {
+                    return (New-CaroEntry -Action $Action -Status 'Created' -Message (('{0} von {1} Zugriffseintraegen neu gesetzt.' -f @($g.Created).Count, $g.Total) + $skipNote) `
+                            -Rollback ([ordered]@{ Rules = @($g.Created) }) -Skipped @($g.Skipped))
+                }
+                if ($g.Total -eq 0) {
+                    return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message ('Nichts zu setzen.' + $skipNote) -Skipped @($g.Skipped))
+                }
+                return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message (('Alle {0} Zugriffseintraege waren schon vorhanden.' -f $g.Total) + $skipNote) -Skipped @($g.Skipped))
+            }
+            'SqlCreateDatabase' {
+                if (Test-CaroSqlDatabaseExists -Server $p.Server -Instance $p.Instance -DbName $p.DbName) {
+                    return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message 'Die Datenbank war schon vorhanden, nichts geaendert.')
+                }
+                New-CaroSqlDatabase -Server $p.Server -Instance $p.Instance -DbName $p.DbName
+                return (New-CaroEntry -Action $Action -Status 'Created' -Message ("Datenbank '{0}' angelegt. Sie wird bei einem Rollback nicht geloescht." -f $p.DbName))
+            }
+            'SqlCreateLogin' {
+                if (Test-CaroSqlLoginExists -Server $p.Server -Instance $p.Instance -LoginName $p.LoginName) {
+                    return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message 'Das Login war schon vorhanden, nichts geaendert.')
+                }
+                $secure = $null
+                if ($p.AccountType -eq 'Sql') { $secure = Get-CaroAccountPassword -Mode $p.PasswordMode }
+                New-CaroSqlLogin -Server $p.Server -Instance $p.Instance -LoginName $p.LoginName -AccountType $p.AccountType -Password $secure
+                return (New-CaroEntry -Action $Action -Status 'Created' -Message ("Login '{0}' angelegt." -f $p.LoginName)  -Rollback ([ordered]@{ Server = $p.Server; Instance = $p.Instance; LoginName = $p.LoginName }))
+            }
+            'SqlGrantRole' {
+                if ($p.Right -eq 'DbOwner') {
+                    $g = Grant-CaroSqlDbOwner -Server $p.Server -Instance $p.Instance -DbName $p.DbName -LoginName $p.LoginName
+                    if ($g.UserCreated -or $g.RoleAdded) {
+                        return (New-CaroEntry -Action $Action -Status 'Created' -Message ("In der Datenbank '{0}' db_owner vergeben." -f $p.DbName)  -Rollback ([ordered]@{ Right = 'DbOwner'; Server = $p.Server; Instance = $p.Instance; DbName = $p.DbName; LoginName = $p.LoginName; UserCreated = [bool]$g.UserCreated; RoleAdded = [bool]$g.RoleAdded }))
+                    }
+                    return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message 'db_owner war schon vergeben, nichts geaendert.')
+                }
+                if (Test-CaroSqlDbCreatorMember -Server $p.Server -Instance $p.Instance -LoginName $p.LoginName) {
+                    return (New-CaroEntry -Action $Action -Status 'AlreadyPresent' -Message 'dbcreator war schon vergeben, nichts geaendert.')
+                }
+                Grant-CaroSqlDbCreator -Server $p.Server -Instance $p.Instance -LoginName $p.LoginName
+                return (New-CaroEntry -Action $Action -Status 'Created' -Message 'dbcreator vergeben.'  -Rollback ([ordered]@{ Right = 'DbCreator'; Server = $p.Server; Instance = $p.Instance; LoginName = $p.LoginName }))
+            }
+            'WriteSqlScript' {
+                $path = New-CaroOutputPath -Type 'Datenbank' -Extension 'sql'
+                Write-CaroTextFile -Path $path -Text (New-CaroSqlScriptText -Params $p)
+                return (New-CaroEntry -Action $Action -Status 'Created' -Message ('SQL-Datei fuer den DBA geschrieben: {0}' -f $path))
             }
             default { throw ("Unbekannter Aktionstyp '{0}'." -f $Action.Type) }
         }
@@ -2358,8 +2798,9 @@ function Invoke-CaroApply {
     $areas = @()
     if (@($actions | Where-Object { $_.Type -eq 'AddExchangeRoleGroupMember' }).Count -gt 0) { $areas += 'Exchange' }
     $servers = @($actions | Where-Object { $_.Area -eq 'Fileserver' } | ForEach-Object { $_.Params.Computer } | Select-Object -Unique)
+    $sqlTargets = @($actions | Where-Object { $_.Type -in @('SqlCreateDatabase', 'SqlCreateLogin', 'SqlGrantRole') } | ForEach-Object { '{0}|{1}' -f $_.Params.Server, $_.Params.Instance } | Select-Object -Unique)
     Write-CaroHeading -Text 'VORAUSSETZUNGEN'
-    if (-not (Show-CaroPrerequisites -Results (Test-CaroPrerequisites -Areas $areas -FileServers $servers))) {
+    if (-not (Show-CaroPrerequisites -Results (Test-CaroPrerequisites -Areas $areas -FileServers $servers -SqlServers $sqlTargets))) {
         Write-CaroMessage -Message 'Apply wird abgebrochen, weil Voraussetzungen fehlen. Es wurde nichts geaendert.' -Level 'ERROR'
         return $false
     }
@@ -2401,6 +2842,7 @@ function Invoke-CaroApply {
                     $failed = $true
                 }
             }
+            if (@($entry.Skipped).Count -gt 0) { Write-CaroMessage -Message ('       HINWEIS: Nicht im AD-Schema vorhanden und deshalb uebersprungen: {0}' -f (@($entry.Skipped) -join ', ')) -Level 'WARN' }
             Write-CaroLog -Level 'AKTION' -Message $a.What -Object $a.Where -Result ('{0}: {1}' -f $entry.Status, $entry.Message)
             if ($failed) { break }
         }
@@ -2436,7 +2878,14 @@ function Invoke-CaroApply {
         return $false
     }
     if ($DryRun) { Write-CaroMessage -Message 'WhatIf abgeschlossen. Es wurde nichts geaendert.' -Level 'OK' }
-    else { Write-CaroMessage -Message 'Apply erfolgreich abgeschlossen.' -Level 'OK' }
+    else {
+        Write-CaroMessage -Message 'Apply erfolgreich abgeschlossen.' -Level 'OK'
+        $hints = @(Get-CaroConfiguratorHints -Settings $config.Settings)
+        if ($hints.Count -gt 0) {
+            Write-Host ''
+            foreach ($h in $hints) { Write-CaroMessage -Message $h -Level 'INFO' }
+        }
+    }
     return $true
 }
 
@@ -2453,6 +2902,11 @@ function Get-CaroRollbackDescription {
         'AddLocalGroupMember' { return ("Account aus lokaler Gruppe '{0}' entfernen auf {1}" -f $Entry.Rollback.GroupLabel, $Entry.Where) }
         'AddExchangeRoleGroupMember' { return ("Account aus Exchange-Rollengruppe '{0}' entfernen" -f $Entry.Rollback.RoleGroup) }
         'CreateAccount' { return ("Account '{0}' LOESCHEN ({1})" -f $Entry.Rollback.Sam, $Entry.Rollback.Dn) }
+        'SqlCreateLogin' { return ("SQL-Login '{0}' loeschen ({1})" -f $Entry.Rollback.LoginName, (Get-CaroSqlInstanceName -Server $Entry.Rollback.Server -Instance $Entry.Rollback.Instance)) }
+        'SqlGrantRole' {
+            if ($Entry.Rollback.Right -eq 'DbOwner') { return ("'{0}' aus db_owner der Datenbank '{1}' entfernen" -f $Entry.Rollback.LoginName, $Entry.Rollback.DbName) }
+            return ("'{0}' aus der Serverrolle dbcreator entfernen" -f $Entry.Rollback.LoginName)
+        }
         default { return $Entry.What }
     }
 }
@@ -2504,6 +2958,24 @@ function Invoke-CaroRollbackEntry {
                     $out.Message = 'Account geloescht.'
                 }
             }
+            'SqlGrantRole' {
+                if ($rb.Right -eq 'DbOwner') {
+                    Revoke-CaroSqlDbOwner -Server $rb.Server -Instance $rb.Instance -DbName $rb.DbName -LoginName $rb.LoginName -UserCreated ([bool]$rb.UserCreated) -RoleAdded ([bool]$rb.RoleAdded)
+                }
+                else {
+                    Revoke-CaroSqlDbCreator -Server $rb.Server -Instance $rb.Instance -LoginName $rb.LoginName
+                }
+                $out.Status = 'RolledBack'
+                $out.Message = 'SQL-Recht entfernt.'
+            }
+            'SqlCreateLogin' {
+                if (Test-CaroSqlLoginExists -Server $rb.Server -Instance $rb.Instance -LoginName $rb.LoginName) {
+                    Remove-CaroSqlLogin -Server $rb.Server -Instance $rb.Instance -LoginName $rb.LoginName
+                    $out.Status = 'RolledBack'
+                    $out.Message = 'Login geloescht.'
+                }
+                else { $out.Status = 'NotFound'; $out.Message = 'Das Login existiert nicht mehr.' }
+            }
             default { throw ("Unbekannter Typ '{0}'." -f $Entry.Type) }
         }
     }
@@ -2543,8 +3015,9 @@ function Invoke-CaroRollback {
     $areas = @()
     if (@($todo | Where-Object { $_.Type -eq 'AddExchangeRoleGroupMember' }).Count -gt 0) { $areas += 'Exchange' }
     $servers = @($todo | Where-Object { $_.Type -eq 'AddLocalGroupMember' -and $_.Rollback.Computer -ne '.' } | ForEach-Object { $_.Rollback.Computer } | Select-Object -Unique)
+    $sqlTargets = @($todo | Where-Object { $_.Type -in @('SqlCreateLogin', 'SqlGrantRole') } | ForEach-Object { '{0}|{1}' -f $_.Rollback.Server, $_.Rollback.Instance } | Select-Object -Unique)
     Write-CaroHeading -Text 'VORAUSSETZUNGEN'
-    if (-not (Show-CaroPrerequisites -Results (Test-CaroPrerequisites -Areas $areas -FileServers $servers))) {
+    if (-not (Show-CaroPrerequisites -Results (Test-CaroPrerequisites -Areas $areas -FileServers $servers -SqlServers $sqlTargets))) {
         Write-CaroMessage -Message 'Rollback wird abgebrochen, weil Voraussetzungen fehlen. Es wurde nichts geaendert.' -Level 'ERROR'
         return $false
     }
@@ -2596,8 +3069,285 @@ function Invoke-CaroRollback {
         Write-CaroMessage -Message 'Der Rollback ist mit Fehlern beendet. Bitte pruefen Sie die Meldungen und das Log.' -Level 'ERROR'
         return $false
     }
+    foreach ($e in @($result.Entries | Where-Object { $_.Type -eq 'SqlCreateDatabase' -and $_.Status -eq 'Created' })) {
+        Write-CaroMessage -Message ('Hinweis: {0} Die Datenbank wurde nicht geloescht.' -f $e.What) -Level 'INFO'
+    }
     Write-CaroMessage -Message 'Rollback abgeschlossen.' -Level 'OK'
     return $true
+}
+
+# ===== 10-Sql.ps1 =====
+# 10-Sql.ps1
+# SQL Server: Verbindung, Pruefungen, Anlegen von Datenbank, Login und Rechten.
+# Die Verbindung laeuft mit dem Windows-Konto des ausfuehrenden Admins (Integrated Security) und braucht dafuer
+# Rechte im SQL-Server (sysadmin). Kennwoerter fuer SQL-Logins werden nie protokolliert.
+
+# Bezeichner fuer T-SQL sicher in eckige Klammern setzen.
+function ConvertTo-CaroSqlIdentifier {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    return ('[' + ($Name -replace '\]', ']]') + ']')
+}
+
+# Text als T-SQL-Zeichenkette (N'...') mit verdoppelten Hochkommas.
+function ConvertTo-CaroSqlString {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
+    return ("N'" + ($Text -replace "'", "''") + "'")
+}
+
+# Server\Instanz als ein Wert.
+function Get-CaroSqlInstanceName {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Server,
+        [string]$Instance = ''
+    )
+    if ($Instance) { return ('{0}\{1}' -f $Server, $Instance) }
+    return $Server
+}
+
+function Get-CaroSqlConnectionString {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [string]$Database = 'master'
+    )
+    return ('Server={0};Database={1};Integrated Security=SSPI;Connect Timeout=10;Application Name=CARO-ServiceAccount-Setup' -f (Get-CaroSqlInstanceName -Server $Server -Instance $Instance), $Database)
+}
+
+# Fuehrt eine Abfrage oder einen Befehl aus. Gibt bei einer Abfrage die Zeilen zurueck.
+function Invoke-CaroSql {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [string]$Database = 'master',
+        [Parameter(Mandatory = $true)][string]$Query,
+        [hashtable]$Parameters = @{},
+        [switch]$NonQuery
+    )
+    Add-Type -AssemblyName System.Data
+    $cn = New-Object System.Data.SqlClient.SqlConnection (Get-CaroSqlConnectionString -Server $Server -Instance $Instance -Database $Database)
+    try {
+        $cn.Open()
+        $cmd = $cn.CreateCommand()
+        $cmd.CommandText = $Query
+        $cmd.CommandTimeout = 60
+        foreach ($k in $Parameters.Keys) { [void]$cmd.Parameters.AddWithValue('@' + $k, $Parameters[$k]) }
+        if ($NonQuery) { [void]$cmd.ExecuteNonQuery(); return }
+        $table = New-Object System.Data.DataTable
+        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+        [void]$adapter.Fill($table)
+        $rows = @()
+        foreach ($r in $table.Rows) {
+            $o = [ordered]@{}
+            foreach ($c in $table.Columns) { $o[$c.ColumnName] = $r[$c.ColumnName] }
+            $rows += [pscustomobject]$o
+        }
+        return $rows
+    }
+    finally { $cn.Dispose() }
+}
+
+# Ist der SQL-Server erreichbar? Liefert Ok und bei einem Fehler den Text.
+function Test-CaroSqlConnection {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = ''
+    )
+    try {
+        $null = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query 'SELECT 1 AS V')
+        return [pscustomobject]@{ Ok = $true; Detail = '' }
+    }
+    catch { return [pscustomobject]@{ Ok = $false; Detail = $_.Exception.Message } }
+}
+
+# Ist der ausfuehrende Admin im SQL-Server sysadmin? Nur damit kann das Skript Datenbank, Login und Rechte anlegen.
+function Test-CaroSqlSysadmin {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = ''
+    )
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query "SELECT IS_SRVROLEMEMBER('sysadmin') AS V")
+    return ($r.Count -gt 0 -and [int]$r[0].V -eq 1)
+}
+
+function Test-CaroSqlDatabaseExists {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$DbName
+    )
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query 'SELECT COUNT(*) AS V FROM sys.databases WHERE name = @n' -Parameters @{ n = $DbName })
+    return ([int]$r[0].V -gt 0)
+}
+
+function Test-CaroSqlLoginExists {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query 'SELECT COUNT(*) AS V FROM sys.server_principals WHERE name = @n' -Parameters @{ n = $LoginName })
+    return ([int]$r[0].V -gt 0)
+}
+
+# Gibt es den Benutzer in der Datenbank, und ist er db_owner?
+function Test-CaroSqlDbOwnerMember {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$DbName,
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    $q = "SELECT (SELECT COUNT(*) FROM sys.database_principals WHERE name = @n) AS U, ISNULL(IS_ROLEMEMBER('db_owner', @n), 0) AS O"
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Database $DbName -Query $q -Parameters @{ n = $LoginName })
+    return [pscustomobject]@{ UserExists = ([int]$r[0].U -gt 0); IsOwner = ([int]$r[0].O -eq 1) }
+}
+
+function Test-CaroSqlDbCreatorMember {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    $q = "SELECT COUNT(*) AS V FROM sys.server_role_members rm JOIN sys.server_principals r ON r.principal_id = rm.role_principal_id JOIN sys.server_principals m ON m.principal_id = rm.member_principal_id WHERE r.name = 'dbcreator' AND m.name = @n"
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query $q -Parameters @{ n = $LoginName })
+    return ([int]$r[0].V -gt 0)
+}
+
+# Datenbank mit den Standardeinstellungen des SQL-Servers anlegen.
+function New-CaroSqlDatabase {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$DbName
+    )
+    Invoke-CaroSql -Server $Server -Instance $Instance -NonQuery -Query ('CREATE DATABASE ' + (ConvertTo-CaroSqlIdentifier -Name $DbName))
+}
+
+# Login anlegen: Windows-Konto oder SQL-Konto mit Kennwort. Das Kennwort wird nicht protokolliert.
+function New-CaroSqlLogin {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$LoginName,
+        [Parameter(Mandatory = $true)][ValidateSet('Windows', 'Sql')][string]$AccountType,
+        [System.Security.SecureString]$Password = $null
+    )
+    $id = ConvertTo-CaroSqlIdentifier -Name $LoginName
+    if ($AccountType -eq 'Windows') {
+        $query = 'CREATE LOGIN {0} FROM WINDOWS' -f $id
+    }
+    else {
+        $plain = ConvertFrom-CaroSecureString -Secure $Password
+        $query = 'CREATE LOGIN {0} WITH PASSWORD = {1}, CHECK_POLICY = ON' -f $id, (ConvertTo-CaroSqlString -Text $plain)
+        $plain = $null
+    }
+    Invoke-CaroSql -Server $Server -Instance $Instance -NonQuery -Query $query
+}
+
+# Login in der Datenbank zum Benutzer machen und in db_owner aufnehmen. Liefert, was neu war (fuer den Rollback).
+function Grant-CaroSqlDbOwner {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$DbName,
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    $id = ConvertTo-CaroSqlIdentifier -Name $LoginName
+    $state = Test-CaroSqlDbOwnerMember -Server $Server -Instance $Instance -DbName $DbName -LoginName $LoginName
+    $userCreated = $false
+    $roleAdded = $false
+    if (-not $state.UserExists) {
+        Invoke-CaroSql -Server $Server -Instance $Instance -Database $DbName -NonQuery -Query ('CREATE USER {0} FOR LOGIN {0}' -f $id)
+        $userCreated = $true
+    }
+    if (-not $state.IsOwner) {
+        Invoke-CaroSql -Server $Server -Instance $Instance -Database $DbName -NonQuery -Query ('ALTER ROLE [db_owner] ADD MEMBER {0}' -f $id)
+        $roleAdded = $true
+    }
+    return [pscustomobject]@{ UserCreated = $userCreated; RoleAdded = $roleAdded }
+}
+
+function Grant-CaroSqlDbCreator {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    Invoke-CaroSql -Server $Server -Instance $Instance -NonQuery -Query ('ALTER SERVER ROLE [dbcreator] ADD MEMBER {0}' -f (ConvertTo-CaroSqlIdentifier -Name $LoginName))
+}
+
+# Rollback: nur das entfernen, was das Skript neu angelegt hat.
+function Revoke-CaroSqlDbOwner {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$DbName,
+        [Parameter(Mandatory = $true)][string]$LoginName,
+        [bool]$UserCreated = $false,
+        [bool]$RoleAdded = $false
+    )
+    $id = ConvertTo-CaroSqlIdentifier -Name $LoginName
+    if ($RoleAdded) { Invoke-CaroSql -Server $Server -Instance $Instance -Database $DbName -NonQuery -Query ('ALTER ROLE [db_owner] DROP MEMBER {0}' -f $id) }
+    if ($UserCreated) { Invoke-CaroSql -Server $Server -Instance $Instance -Database $DbName -NonQuery -Query ('DROP USER {0}' -f $id) }
+}
+
+function Revoke-CaroSqlDbCreator {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    Invoke-CaroSql -Server $Server -Instance $Instance -NonQuery -Query ('ALTER SERVER ROLE [dbcreator] DROP MEMBER {0}' -f (ConvertTo-CaroSqlIdentifier -Name $LoginName))
+}
+
+function Remove-CaroSqlLogin {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = '',
+        [Parameter(Mandatory = $true)][string]$LoginName
+    )
+    Invoke-CaroSql -Server $Server -Instance $Instance -NonQuery -Query ('DROP LOGIN {0}' -f (ConvertTo-CaroSqlIdentifier -Name $LoginName))
+}
+
+# SQL-Datei fuer den DBA. Enthaelt nie ein Kennwort: Bei einem SQL-Konto steht ein Platzhalter darin.
+function New-CaroSqlScriptText {
+    param([Parameter(Mandatory = $true)]$Params)
+    $login = [string]$Params.LoginName
+    $id = ConvertTo-CaroSqlIdentifier -Name $login
+    $lit = ConvertTo-CaroSqlString -Text $login
+    $nl = [Environment]::NewLine
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('-- CARO Service-Account: SQL-Rechte (erzeugt von CARO-ServiceAccount-Setup.ps1)')
+    [void]$sb.AppendLine('-- Bitte mit einem Konto ausfuehren, das im SQL-Server sysadmin ist.')
+    [void]$sb.AppendLine('USE [master];')
+    [void]$sb.AppendLine('GO')
+    if ($Params.Right -eq 'DbOwner' -and $Params.CreateDatabase) {
+        [void]$sb.AppendLine(('IF DB_ID({0}) IS NULL CREATE DATABASE {1};' -f (ConvertTo-CaroSqlString -Text $Params.DbName), (ConvertTo-CaroSqlIdentifier -Name $Params.DbName)))
+        [void]$sb.AppendLine('GO')
+    }
+    if ($Params.AccountType -eq 'Sql') {
+        [void]$sb.AppendLine(('IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = {0})' -f $lit))
+        [void]$sb.AppendLine(('    CREATE LOGIN {0} WITH PASSWORD = N''<KENNWORT HIER EINTRAGEN>'', CHECK_POLICY = ON;' -f $id))
+    }
+    else {
+        [void]$sb.AppendLine(('IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = {0})' -f $lit))
+        [void]$sb.AppendLine(('    CREATE LOGIN {0} FROM WINDOWS;' -f $id))
+    }
+    [void]$sb.AppendLine('GO')
+    if ($Params.Right -eq 'DbOwner') {
+        [void]$sb.AppendLine(('USE {0};' -f (ConvertTo-CaroSqlIdentifier -Name $Params.DbName)))
+        [void]$sb.AppendLine('GO')
+        [void]$sb.AppendLine(('IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = {0})' -f $lit))
+        [void]$sb.AppendLine(('    CREATE USER {0} FOR LOGIN {0};' -f $id))
+        [void]$sb.AppendLine('GO')
+        [void]$sb.AppendLine(('ALTER ROLE [db_owner] ADD MEMBER {0};' -f $id))
+        [void]$sb.AppendLine('GO')
+    }
+    else {
+        [void]$sb.AppendLine(('ALTER SERVER ROLE [dbcreator] ADD MEMBER {0};' -f $id))
+        [void]$sb.AppendLine('GO')
+    }
+    return $sb.ToString()
 }
 
 #endregion CARO-LIBS
