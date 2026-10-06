@@ -1,6 +1,6 @@
 # CARO-ServiceAccount-Setup.ps1 - Einzeldatei-Fassung (nicht von Hand bearbeiten)
 # Erzeugt aus src/ mit scripts/build_single_file.py. Der Hash dient nur der Aktualitaetspruefung.
-# Quell-Hash: bbfb7fe9bf2c82d55c34433946ae4f55bdb809119738a48e60d139ec9e383585
+# Quell-Hash: 532b3fe514bf6cffe3b5ddb5ffbaadc552726a970186d56be658aecd93bbe65e
 <#
 .SYNOPSIS
     Legt einen Service-Account fuer die CARO-Suite an und vergibt die dafuer noetigen Rechte.
@@ -1231,6 +1231,26 @@ function Find-CaroDomainControllers {
     return $found
 }
 
+# Liefert die AD-Klasse eines Objekts (z. B. user, group, organizationalUnit, container) oder $null, wenn es nicht existiert.
+function Get-CaroAdObjectClass {
+    param([Parameter(Mandatory = $true)][string]$Dn)
+    try { return [string](Get-ADObject -Identity $Dn -Properties objectClass -ErrorAction Stop).objectClass }
+    catch { return $null }
+}
+
+# Unter-OUs und Container direkt unter einem Objekt (fuer den Hinweis bei einer falschen Eingabe).
+function Get-CaroChildContainers {
+    param(
+        [Parameter(Mandatory = $true)][string]$ParentDn,
+        [int]$Max = 12
+    )
+    try {
+        $items = Get-ADObject -SearchBase $ParentDn -SearchScope OneLevel -LDAPFilter '(|(objectClass=organizationalUnit)(objectClass=container))' -ErrorAction Stop
+        return @($items | Select-Object -First $Max | ForEach-Object { [string]$_.DistinguishedName })
+    }
+    catch { return @() }
+}
+
 # Sucht einen vorhandenen Account ueber den SamAccountName.
 function Get-CaroExistingAccount {
     param([Parameter(Mandatory = $true)][string]$Sam)
@@ -1594,6 +1614,28 @@ function Get-CaroParentDn {
     return ''
 }
 
+# Erklaert, warum eine eingegebene OU nicht akzeptiert wurde: falscher Objekttyp (z. B. Gruppe) oder nicht vorhanden.
+function Get-CaroOuProblemText {
+    param(
+        [Parameter(Mandatory = $true)][string]$FullDn,
+        [Parameter(Mandatory = $true)][string]$DomainDn
+    )
+    $class = Get-CaroAdObjectClass -Dn $FullDn
+    if ($class) {
+        return ("Das Objekt '{0}' existiert, ist aber vom Typ '{1}' und weder eine OU noch ein Container. Hier wird eine OU oder ein Container gebraucht. In eine Gruppe lassen sich keine Benutzer verschieben. (OUs beginnen mit OU=, Gruppen und Container mit CN=.)" -f $FullDn, $class)
+    }
+    $text = "Die OU '{0}' wurde im AD nicht gefunden. Hinweis: OUs beginnen mit OU=, nur Container (z. B. Users) und Gruppen mit CN=." -f $FullDn
+    $parent = Get-CaroParentDn -Dn $FullDn
+    if ($parent -and (Get-CaroOuDn -Dn $parent)) {
+        $kids = @(Get-CaroChildContainers -ParentDn $parent)
+        if ($kids.Count -gt 0) {
+            $short = @($kids | ForEach-Object { ConvertTo-CaroShortOu -Dn $_ -DomainDn $DomainDn })
+            $text += " Unter '{0}' gibt es: {1}" -f (ConvertTo-CaroShortOu -Dn $parent -DomainDn $DomainDn), ($short -join '; ')
+        }
+    }
+    return $text
+}
+
 # Fragt eine OU (oder mehrere) ab. Eingabe OHNE Domaenenteil, von der tiefsten OU nach oben, z. B. OU=Service,OU=Accounts.
 # Die Domaene wird automatisch ergaenzt. Liefert die geprueften, vollstaendigen Distinguished Names.
 function Read-CaroOuInput {
@@ -1615,7 +1657,7 @@ function Read-CaroOuInput {
         foreach ($part in $parts) {
             $full = ConvertTo-CaroOuDn -Text $part -DomainDn $dom.Dn
             if (-not (Test-CaroDnFormat -Dn $full)) { return ("'{0}' ist keine gueltige OU-Angabe. Beispiel: OU=Service,OU=Accounts (ohne DC-Teil)" -f $part) }
-            if (-not (Get-CaroOuDn -Dn $full)) { return ("Die OU '{0}' wurde im AD nicht gefunden." -f $full) }
+            if (-not (Get-CaroOuDn -Dn $full)) { return (Get-CaroOuProblemText -FullDn $full -DomainDn $dom.Dn) }
         }
         return $null
     }
@@ -1743,6 +1785,22 @@ function Read-CaroFunctionSelection {
     }
 }
 
+# Warnung und Bestaetigung fuer "ganze Domaene". Gilt fuer die Auswahl "Ganze Domaene" und ebenso, wenn die Domaene
+# selbst als OU eingegeben wird. Liefert $true, wenn der Ausfuehrende bestaetigt.
+function Confirm-CaroDomainWide {
+    param(
+        [Parameter(Mandatory = $true)]$Domain,
+        [bool]$Dangerous = $false
+    )
+    Write-CaroMessage -Message ('Die Rechte wuerden fuer die ganze Domaene gelten ({0}).' -f $Domain.Dn) -Level 'WARN'
+    $ok = Read-CaroYesNo -Prompt 'Wirklich fuer die ganze Domaene?' -Default $false
+    if ($ok -and $Dangerous) {
+        Write-CaroMessage -Message 'Dieser Bereich enthaelt Anlegen, Loeschen oder Verschieben von Benutzern. Domaenenweit kann CARO dann jedes Benutzerkonto der Domaene loeschen.' -Level 'WARN'
+        $ok = Read-CaroYesNo -Prompt 'Das gilt wirklich fuer die gesamte Domaene?' -Default $false
+    }
+    return $ok
+}
+
 # OUs fuer eine Rolle abfragen: bestimmte OUs (mit Schleife) oder die ganze Domaene.
 function Read-CaroOuTargets {
     param(
@@ -1758,13 +1816,7 @@ function Read-CaroOuTargets {
     while ($true) {
         $scope = Read-CaroChoice -Title ('{0}: Wo darf CARO arbeiten?' -f $role.Title) -Options $options -Default '1'
         if ($scope -eq '2') {
-            Write-CaroMessage -Message ('Sie waehlen die ganze Domaene ({0}).' -f $dom.Dn) -Level 'WARN'
-            $ok = Read-CaroYesNo -Prompt 'Wirklich fuer die ganze Domaene?' -Default $false
-            if ($ok -and $Dangerous) {
-                Write-CaroMessage -Message 'Dieser Bereich enthaelt Anlegen, Loeschen oder Verschieben von Benutzern. Domaenenweit kann CARO dann jedes Benutzerkonto der Domaene loeschen.' -Level 'WARN'
-                $ok = Read-CaroYesNo -Prompt 'Das gilt wirklich fuer die gesamte Domaene?' -Default $false
-            }
-            if (-not $ok) { continue }
+            if (-not (Confirm-CaroDomainWide -Domain $dom -Dangerous $Dangerous)) { continue }
             return @{ Targets = @($dom.Dn); DomainWide = $true }
         }
         break
@@ -1779,9 +1831,19 @@ function Read-CaroOuTargets {
     Write-CaroMessage -Message $role.Question -Level 'INFO'
     while ($true) {
         foreach ($dn in @(Read-CaroOuInput -Prompt 'OU' -DefaultDn $default -Multiple)) {
+            if ($dn -ieq $dom.Dn) {
+                Write-CaroMessage -Message 'Sie haben die Domaene selbst eingegeben. Das entspricht der Auswahl "Ganze Domaene".' -Level 'WARN'
+                if (Confirm-CaroDomainWide -Domain $dom -Dangerous $Dangerous) {
+                    return @{ Targets = @($dom.Dn); DomainWide = $true }
+                }
+                Write-CaroMessage -Message 'Die Domaene wurde nicht uebernommen. Bitte eine OU angeben.' -Level 'INFO'
+                continue
+            }
             if ($targets -notcontains $dn) { $targets += $dn }
         }
         $default = ''
+        # Noch keine OU uebernommen (z. B. Domaene abgelehnt): erneut nach einer OU fragen, nicht nach "weiteren" OUs.
+        if ($targets.Count -eq 0) { continue }
         Write-CaroMessage -Message ('Bisher fuer {0}: {1}' -f $role.Title, ($targets -join '; ')) -Level 'INFO'
         if (-not (Read-CaroYesNo -Prompt 'Weitere OU hinzufuegen?' -Default $false)) { break }
     }

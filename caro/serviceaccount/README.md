@@ -84,7 +84,7 @@ Hilfe im Skript: `Get-Help .\CARO-ServiceAccount-Setup.ps1 -Full`
 
    Dann: je Bereich (Benutzerkonten, Gruppen, Bereinigung inaktiver Benutzer) eine oder mehrere OUs (Schleife "Weitere OU hinzufügen?") oder die ganze Domäne. Optional schlägt das Skript aus einer Basis-OU die Unter-OUs vor.
 
-   **OU-Eingabe ohne Domänenteil:** OUs werden ohne `DC=...` eingegeben, von der tiefsten OU nach oben, z. B. `OU=Service,OU=Accounts`. Das Skript ergänzt die Domäne automatisch (`OU=Service,OU=Accounts,DC=firma,DC=de`) und zeigt sie bei jeder Frage an. Wer den Domänenteil trotzdem mit eingibt, wird nicht gestört. Jede OU wird im AD geprüft; bei einem Tippfehler zeigt das Skript den vollständigen Namen, den es gesucht hat.
+   **OU-Eingabe ohne Domänenteil:** OUs werden ohne `DC=...` eingegeben, von der tiefsten OU nach oben, z. B. `OU=Service,OU=Accounts`. Das Skript ergänzt die Domäne automatisch (`OU=Service,OU=Accounts,DC=firma,DC=de`) und zeigt sie bei jeder Frage an. Wer den Domänenteil trotzdem mit eingibt, wird nicht gestört. Jede OU wird im AD geprüft. Bei einem Tippfehler zeigt das Skript den vollständigen Namen, den es gesucht hat, und nennt die Unter-OUs der übergeordneten OU. Ist das Objekt zwar vorhanden, aber eine **Gruppe** (oder ein anderer Objekttyp), sagt das Skript das ausdrücklich: Dort lassen sich keine Benutzer verschieben, es wird eine OU oder ein Container gebraucht. OUs beginnen mit `OU=`, nur Container wie `CN=Users` und Gruppen beginnen mit `CN=`.
 7. **Attribut-Strategie** (wird immer ausdrücklich gefragt, siehe unten).
 8. **Exchange** und **Fileserver.**
 9. **Zustand prüfen** (nur lesend): Was besteht schon, was ist neu? Bei einem **neuen** Account prüft das Skript bei den lokalen Gruppen nur, ob die Gruppe existiert, und listet ihre Mitglieder nicht auf (Windows protokolliert jede Auflistung als eigenes Sicherheitsereignis 4799). Nur bei einem übernommenen Account werden die Mitglieder gelesen.
@@ -138,7 +138,7 @@ Optional: Gruppen außerhalb der oben genannten Gruppen-OU, in die CARO neue Ben
 |---|---|
 | Gruppenmitglieder ändern | CARO darf nur Mitglieder hinzufügen und entfernen (Recht: Write Members). Kein Anlegen oder Löschen von Gruppen. |
 
-**Domänenweit:** Statt einer OU kann die ganze Domäne gewählt werden. Das Skript warnt dann ausdrücklich und verlangt bei Bereichen mit Anlegen, Löschen oder Verschieben von Benutzern eine zweite Bestätigung.
+**Domänenweit:** Statt einer OU kann die ganze Domäne gewählt werden. Gibt man die Domäne selbst als OU ein (z. B. `DC=firma,DC=de`), behandelt das Skript das genauso und verlangt dieselben Bestätigungen. Das Skript warnt dann ausdrücklich und verlangt bei Bereichen mit Anlegen, Löschen oder Verschieben von Benutzern eine zweite Bestätigung.
 
 **Wichtig zur OU-Auswahl:** Ein CARO-Scan läuft über die ganze Domäne, **ändern** kann CARO aber nur dort, wo der Account Rechte hat. Nicht durchführbare Änderungen werden von CARO dokumentiert.
 
