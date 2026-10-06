@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CARO User-Templates</title>
+<style>
+  /* ── Farben (CARO/CUSATUM, abgeleitet von cusatum.de) – nur hier ändern ── */
+  :root {
+    --brand:       #557982;   /* Hauptfarbe Blaugrau */
+    --brand-deep:  #3f5c65;   /* dunkleres Blaugrau für Text auf Tönung */
+    --brand-tint:  #e8eef0;   /* helle Tönung */
+    --brand-line:  #c5d3d7;   /* Rahmen / Hover */
+    --brand-glow:  rgba(85,121,130,.2);
+    --brand-dark:  #212934;   /* Marineblau: Leiste, Vorschau */
+    --accent:      #e1ce25;   /* Gelb: Akzent, Speichern */
+    --accent-hover:#c7b722;
+    --bg:          #f6f6f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    color: #2d3748;
+    min-height: 100vh;
+  }
+
+  /* ── Topbar ── */
+  .topbar {
+    background: var(--brand-dark);
+    border-bottom: 4px solid var(--accent);
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar h1 { font-size: 1.2rem; font-weight: 600; }
+  .topbar p  { font-size: .8rem; opacity: .85; margin-top: 2px; }
+  .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 6px; border: none;
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: all .15s;
+  }
+  .btn-light  { background: rgba(255,255,255,.2); color: white; }
+  .btn-light:hover { background: rgba(255,255,255,.35); }
+  .btn-save   { background: var(--accent); color: var(--brand-dark); }
+  .btn-save:hover { background: var(--accent-hover); }
+  #fileInput  { display: none; }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .preview-panel { display: none; }
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #323232; color: white; padding: 10px 20px; border-radius: 24px;
+    font-size: .85rem; opacity: 0; transition: opacity .3s; z-index: 999;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ── Meta Card ── */
+  .meta-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .meta-card-header {
+    background: var(--brand-tint);
+    padding: 12px 18px;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--brand-deep);
+  }
+  .meta-card-body { padding: 16px 18px; display: grid; gap: 12px; }
+
+  /* ── Accordion ── */
+  .accordion {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .accordion.section-disabled { opacity: .6; }
+
+  .accordion-header {
+    padding: 12px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    user-select: none;
+    transition: background .15s;
+  }
+  .accordion-header:hover { background: var(--bg); }
+  .accordion-header.open  { border-bottom: 1px solid #e2e8f0; }
+
+  /* Section toggle checkbox */
+  .section-toggle {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    accent-color: var(--brand);
+    cursor: pointer;
+  }
+
+  .acc-icon  { font-size: 1rem; width: 24px; text-align: center; }
+  .acc-title { flex: 1; font-weight: 600; font-size: .95rem; }
+
+  .acc-badge {
+    background: var(--brand-tint); color: var(--brand-deep);
+    font-size: .72rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 12px;
+  }
+  .acc-badge.warn { background: #fff3e0; color: #e65100; }
+  .acc-badge.off  { background: #f5f5f5; color: #999; }
+
+  .acc-chevron { font-size: .75rem; color: #aaa; transition: transform .2s; }
+  .accordion-header.open .acc-chevron { transform: rotate(90deg); }
+
+  .accordion-body        { display: none; padding: 16px 18px; }
+  .accordion-body.open   { display: block; }
+  .accordion-body.dimmed { opacity: .4; pointer-events: none; }
+
+  /* ── Field Grid ── */
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .field-grid.two { grid-template-columns: 1fr 1fr; }
+
+  /* ── Field ── */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field.field-disabled input,
+  .field.field-disabled textarea { background: #f5f5f5 !important; color: #aaa; }
+
+  .field-label-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .field-toggle {
+    width: 15px; height: 15px;
+    accent-color: var(--brand);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .field-label {
+    font-size: .78rem; font-weight: 600; color: #4a5568;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .badge-auto     { background: #f0fff4; color: #276749; font-size: .65rem; font-weight: 700; padding: 1px 6px; border-radius: 10px; border: 1px solid #c6f6d5; }
+  .badge-fixed    { background: #f7f7f7; color: #999;    font-size: .65rem; font-weight: 700; padding: 1px 6px; border-radius: 10px; border: 1px solid #ddd; }
+  .badge-required { background: #fff5f5; color: #c53030; font-size: .65rem; padding: 1px 6px; border-radius: 10px; border: 1px solid #fed7d7; }
+
+  .field-hint { font-size: .72rem; color: #718096; margin-top: 1px; }
+
+  .field input[type="text"],
+  .field input[type="password"],
+  .field input[type="number"],
+  .field textarea {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: .875rem;
+    font-family: inherit;
+    transition: border .15s, box-shadow .15s;
+    background: white;
+  }
+  .field input:focus, .field textarea:focus {
+    outline: none; border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-glow);
+  }
+  .field input.auto-field { background: #f8fff8; border-color: #c6f6d5; color: #276749; font-style: italic; }
+  .field input:disabled, .field textarea:disabled { background: #f7f7f7; color: #999; cursor: not-allowed; }
+  .field textarea { min-height: 70px; resize: vertical; }
+
+  /* Password */
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 36px; width: 100%; }
+  .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: .9rem; background: none; border: none; padding: 0; }
+  .pw-eye:hover { color: #555; }
+
+  /* Toggle switch */
+  .toggle-row   { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .toggle-row label { font-size: .875rem; color: #2d3748; cursor: pointer; flex: 1; }
+  .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #cbd5e0; border-radius: 20px; cursor: pointer; transition: background .2s; }
+  .slider:before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform .2s; }
+  .toggle input:checked + .slider { background: var(--brand); }
+  .toggle input:checked + .slider:before { transform: translateX(16px); }
+
+  /* Flags */
+  .flags-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .flag-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; transition: background .15s, border .15s; }
+  .flag-item:hover { background: var(--brand-tint); border-color: var(--brand-line); }
+  .flag-item input { cursor: pointer; accent-color: var(--brand); }
+  .flag-item span { font-size: .82rem; color: #2d3748; }
+
+  /* ── Group list ── */
+  .group-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .group-row  { display: flex; gap: 6px; align-items: center; }
+  .group-row input[type="text"] {
+    flex: 1; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px;
+    font-size: .875rem; font-family: inherit;
+  }
+  .group-row input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-glow); }
+  .btn-remove {
+    background: #fff5f5; color: #c53030; border: 1px solid #fed7d7;
+    border-radius: 6px; padding: 7px 10px; cursor: pointer; font-size: .85rem;
+    flex-shrink: 0; transition: background .15s;
+  }
+  .btn-remove:hover { background: #fed7d7; }
+  .btn-add-group {
+    margin-top: 6px; padding: 7px 14px;
+    background: var(--brand-tint); color: var(--brand-deep); border: 1px solid var(--brand-line);
+    border-radius: 6px; font-size: .82rem; font-weight: 600;
+    cursor: pointer; transition: background .15s; align-self: flex-start;
+  }
+  .btn-add-group:hover { background: var(--brand-line); }
+  .group-info {
+    font-size: .75rem; color: #718096; margin-top: 6px;
+    padding: 8px 10px; background: #f7fafc; border-radius: 6px;
+    border-left: 3px solid var(--brand); line-height: 1.5;
+  }
+
+  /* ── Section label ── */
+  .section-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #a0aec0; margin: 14px 0 8px; }
+
+  /* ── Preview Panel ── */
+  .preview-panel { position: sticky; top: 76px; align-self: start; }
+  .preview-card  { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: hidden; }
+  .preview-header { background: var(--brand-dark); color: white; padding: 12px 16px; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
+  #jsonOutput {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: .72rem; line-height: 1.5;
+    background: #1e272e; color: #ecf0f1;
+    padding: 14px; max-height: calc(100vh - 200px);
+    overflow-y: auto; white-space: pre; tab-size: 2;
+  }
+  #jsonOutput::-webkit-scrollbar { width: 6px; }
+  #jsonOutput::-webkit-scrollbar-track { background: #1e272e; }
+  #jsonOutput::-webkit-scrollbar-thumb { background: #37474f; border-radius: 3px; }
+
+  /* ── Pflichtfeld-Checkbox je Feld ── */
+  .req-ctl {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+    font-size: .68rem; font-weight: 700; color: #718096; cursor: pointer;
+    padding: 1px 7px; border-radius: 10px; border: 1px solid #e2e8f0; background: #fafafa;
+    user-select: none;
+  }
+  .req-ctl input { width: 13px; height: 13px; accent-color: #c53030; cursor: pointer; }
+  .req-ctl.locked { cursor: not-allowed; opacity: .75; }
+  .req-ctl.locked input { cursor: not-allowed; }
+  .field.field-required .req-ctl { color: #c53030; border-color: #fed7d7; background: #fff5f5; }
+  .field.field-required input[type="text"],
+  .field.field-required textarea { border-left: 3px solid #fc8181; }
+  .field-toggle:disabled { cursor: not-allowed; opacity: .5; }
+
+  /* ── „Muss geändert werden“ ── */
+  .must-change { margin: 14px 18px 0; padding: 10px 14px; border-radius: 8px; font-size: .82rem; line-height: 1.5; }
+  .must-change.open { background: #fff5f5; border: 1px solid #feb2b2; color: #9b2c2c; }
+  .must-change.done { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+  .field.must-open input, .field.must-open textarea,
+  .field.must-open .id-prefix-row input { border-color: #e53e3e; background: #fff8f8; }
+  .field.must-ok input, .field.must-ok textarea { border-color: #48bb78; }
+  .must-msg { font-size: .72rem; font-weight: 600; color: #c53030; }
+  .field.must-ok .must-msg { color: #2f855a; }
+  .btn-save.has-open { background: #dd6b20; color: white; }
+  .btn-save.has-open:hover { background: #c05621; color: white; }
+
+  /* ── Zielordner ── */
+  .target-bar {
+    background: var(--brand-tint); color: var(--brand-deep); font-size: .78rem;
+    padding: 6px 24px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+    border-bottom: 1px solid var(--brand-line);
+  }
+  .target-bar code { background: rgba(255,255,255,.7); padding: 1px 6px; border-radius: 4px; }
+  .target-bar button { background: none; border: none; color: var(--brand-deep); font-weight: 700; cursor: pointer; font-size: .78rem; }
+  .target-bar button:hover { text-decoration: underline; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 60px 20px; color: #a0aec0; }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+  .empty-state h2 { font-size: 1.1rem; margin-bottom: 8px; color: #718096; }
+  .empty-state p { font-size: .875rem; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>🗂 CARO User-Templates</h1>
+    <p>CARO-Suite – Vorlagen für die Benutzeranlage</p>
+  </div>
+  <div class="topbar-actions">
+    <label for="fileInput" class="btn btn-light">📂 JSON laden</label>
+    <input type="file" id="fileInput" accept=".json">
+    <button class="btn btn-light" id="btnTarget" onclick="chooseTargetDir()" title="Ordner einmal wählen – jedes Speichern landet danach dort">📁 Zielordner wählen</button>
+    <button class="btn btn-save" id="btnSave" onclick="downloadJSON()">💾 JSON speichern</button>
+  </div>
+</div>
+<div class="target-bar">
+  <span>Zielordner in CARO: <code id="caroPath">C:\ProgramData\CUSATUM Service GmbH\CARO\tools\manage</code>
+    <button onclick="copyCaroPath()">kopieren</button></span>
+  <span id="targetInfo">Gewählter Speicherort: noch keiner – Speichern öffnet den Dialog bzw. lädt herunter.</span>
+</div>
+
+<div id="toast"></div>
+
+<div class="layout">
+  <div id="formArea">
+    <div class="empty-state" id="emptyState">
+      <div class="icon">📄</div>
+      <h2>Noch keine Datei geladen</h2>
+      <p>Klicke oben auf <strong>JSON laden</strong> und wähle deine<br><code>.json</code>-Vorlage aus.</p>
+    </div>
+    <div id="formContent" style="display:none"></div>
+  </div>
+
+  <div class="preview-panel">
+    <div class="preview-card">
+      <div class="preview-header">
+        <span>JSON Vorschau</span>
+        <span id="previewLabel" style="opacity:.6;font-weight:400">–</span>
+      </div>
+      <div id="jsonOutput">// Lade eine JSON-Datei…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let jsonData = null;
+
+const ALWAYS_HIDDEN = [
+  'cts.mandatoryLdapParameter.AccountGivennameReplace',
+  'cts.mandatoryLdapParameter.AccountSurnameReplace'
+];
+const FIXED_IDS = [
+  'cts.createNewAccount.LdapOuResource',
+  'cts.modificationComment',
+  'cts.createNewAccount.ModificationComment'
+];
+const GROUP_MEMBERSHIP_ID = 'cts.changeAccountMemberships.addMembers';
+const GROUP_QUERY_TEMPLATE =
+  "@@services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'group'), queryInList('samAccountName', [GROUPS])), toTypedArray('System.Int32', [ 1 ])).Items@@";
+// Pflicht fest vorgegeben (Checkbox gesperrt): ohne diese Werte kann CARO keinen Benutzer anlegen
+const LOCKED_REQUIRED_IDS = [
+  'cts.mandatoryLdapParameter.AccountGivenname',
+  'cts.mandatoryLdapParameter.AccountSurname',
+  'cts.passwordParameter.Password',
+  'cts.modificationComment',
+  'cts.createNewAccount.LdapOuResource'
+];
+// Werte der Original-Vorlage – diese MÜSSEN im neuen Template geändert werden
+const STANDARD = {
+  id:     'activeDirectoryStandardUser',
+  nameDe: 'Neuen Benutzer erzeugen',
+  nameEn: 'Create new user',
+  descDe: 'Erzeugt einen neuen Standardbenutzer (nativ).',
+  descEn: 'Create new standard user (native).'
+};
+const MANAGER_ID = 'cts.ldapParameter.AccountManager';
+const MANAGER_QUERY_TEMPLATE =
+  "@@services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items@@";
+
+// ─────────────────────────────────────────────
+// FILE LOADING
+// ─────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      jsonData = JSON.parse(ev.target.result);
+      buildForm();
+      toast('✅ ' + file.name + ' geladen');
+    } catch(err) {
+      toast('❌ Ungültige JSON-Datei: ' + err.message, 4000);
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ─────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────
+let toastTimer;
+function toast(msg, duration = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ─────────────────────────────────────────────
+// ZIELORDNER (merkt sich den Ordner im Browser; nur Chrome/Edge)
+// ─────────────────────────────────────────────
+let targetDir = null;
+const DB_NAME = 'caro-usertemplates', DB_STORE = 'kv';
+
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(DB_STORE);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const q = db.transaction(DB_STORE).objectStore(DB_STORE).get(key);
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  });
+}
+async function idbSet(key, val) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const t = db.transaction(DB_STORE, 'readwrite');
+    t.objectStore(DB_STORE).put(val, key);
+    t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+  });
+}
+
+function showTargetInfo() {
+  const el = document.getElementById('targetInfo');
+  const btn = document.getElementById('btnTarget');
+  if (!window.showDirectoryPicker) {
+    el.textContent = 'Dieser Browser kann keinen festen Zielordner merken – Speichern lädt in den Download-Ordner (Chrome/Edge nutzen).';
+    btn.style.display = 'none';
+    return;
+  }
+  if (targetDir) {
+    el.innerHTML = 'Gewählter Speicherort: <code>' + esc(targetDir.name) + '</code> (jedes Speichern landet dort)';
+    btn.textContent = '📁 Zielordner: ' + targetDir.name;
+  } else {
+    el.textContent = 'Gewählter Speicherort: noch keiner – „Zielordner wählen“ klicken (einmalig).';
+    btn.textContent = '📁 Zielordner wählen';
+  }
+}
+
+async function chooseTargetDir() {
+  if (!window.showDirectoryPicker) { toast('⚠️ Browser unterstützt das nicht – bitte Chrome/Edge', 4000); return; }
+  try {
+    targetDir = await window.showDirectoryPicker({ id: 'caro-templates', mode: 'readwrite' });
+    try { await idbSet('targetDir', targetDir); } catch (e) { /* Merken nicht möglich, gilt dann nur für diese Sitzung */ }
+    showTargetInfo();
+    toast('📁 Zielordner: ' + targetDir.name);
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    toast('❌ Ordner nicht wählbar: ' + err.message + ' – ggf. Zwischenordner nehmen', 5000);
+  }
+}
+
+async function restoreTargetDir() {
+  try { targetDir = (await idbGet('targetDir')) || null; } catch (e) { targetDir = null; }
+  showTargetInfo();
+}
+restoreTargetDir();
+
+function copyCaroPath() {
+  const t = document.getElementById('caroPath').textContent;
+  (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
+    .then(() => toast('📋 Pfad kopiert'), () => toast('Pfad bitte manuell markieren und kopieren'));
+}
+
+// ─────────────────────────────────────────────
+// SPEICHERN
+// ─────────────────────────────────────────────
+async function downloadJSON() {
+  if (!jsonData) { toast('⚠️ Bitte zuerst eine Datei laden'); return; }
+
+  const open = openMustChange();
+  if (open.length && !confirm(
+    'Es sind noch Pflichtänderungen offen:\n\n• ' + open.join('\n• ') +
+    '\n\nOhne diese Änderungen heißt der Menüpunkt in CARO wie das Original bzw. kollidiert die ID.\n\nTrotzdem speichern?')) return;
+
+  const str = JSON.stringify(jsonData, null, 2);
+  const filename = (jsonData.Id || 'template') + '.json';
+
+  // 1) Gemerkter Zielordner
+  if (targetDir) {
+    try {
+      let perm = await targetDir.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await targetDir.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        let existed = true;
+        try { await targetDir.getFileHandle(filename); } catch (e) { existed = false; }
+        const fh = await targetDir.getFileHandle(filename, { create: true });
+        const w = await fh.createWritable();
+        await w.write(str);
+        await w.close();
+        toast('💾 ' + (existed ? 'Überschrieben: ' : 'Neu angelegt: ') + targetDir.name + '/' + filename, 4000);
+        return;
+      }
+      toast('⚠️ Kein Zugriff auf den Zielordner – bitte erneut wählen', 4000);
+      return;
+    } catch (err) {
+      toast('❌ Speichern im Zielordner fehlgeschlagen: ' + err.message, 5000);
+      return;
+    }
+  }
+
+  // 2) Speichern-unter-Dialog
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: 'JSON-Datei', accept: { 'application/json': ['.json'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(str);
+      await writable.close();
+      toast('💾 Gespeichert als ' + handle.name);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // Nutzer hat Dialog abgebrochen
+      toast('❌ Speichern fehlgeschlagen: ' + err.message, 4000);
+      return;
+    }
+  }
+
+  // 3) Fallback für Browser ohne File System Access API (z.B. Firefox)
+  const blob = new Blob([str], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('💾 Gespeichert als ' + a.download);
+}
+
+// ─────────────────────────────────────────────
+// PREVIEW
+// ─────────────────────────────────────────────
+function updatePreview() {
+  if (!jsonData) return;
+  document.getElementById('jsonOutput').textContent = JSON.stringify(jsonData, null, 2);
+  document.getElementById('previewLabel').textContent = jsonData.Id || '';
+}
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+function str(obj, fallback = '') {
+  if (!obj) return fallback;
+  if (typeof obj === 'string') return obj;
+  if (obj.Strings) return obj.Strings['de-DE'] || obj.Strings['en-US'] || fallback;
+  return fallback;
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Pflicht fest vorgegeben (keine Änderung, kein Ein-/Ausschalter)?
+function isRequired(param) {
+  return LOCKED_REQUIRED_IDS.includes(param.Id) || param.DataType === 40 || param.DataType === 102;
+}
+
+// Aktueller Pflicht-Stand laut JSON (Mindestlänge > 0)
+function isMarkedRequired(param) {
+  if (isRequired(param)) return true;
+  if (param.AutoValueExpression) return false;
+  if (param.DataType === 3) return (param.MinStringLength || 0) > 0;
+  return (param.MinListLength || 0) > 0;
+}
+
+// Pflicht ein-/ausschalten (Mindestlänge 1 bzw. 0)
+function setRequired(idx, on) {
+  const p = jsonData.ConfigurationParameterDefinitions[idx];
+  if (p.DataType === 3) p.MinStringLength = on ? Math.max(1, p.MinStringLength || 0) : 0;
+  else                  p.MinListLength   = on ? Math.max(1, p.MinListLength   || 0) : 0;
+  updatePreview();
+  document.dispatchEvent(new Event('reqchange'));
+}
+
+// Is a param currently visible/enabled in the JSON?
+function isParamActive(param) {
+  return param.IsEnabledExpression !== 'false' &&
+         param.isVisibleExpression !== 'false' &&
+         param.IsVisibleExpression !== 'false';
+}
+
+// Enable or disable a parameter in jsonData
+function setParamActive(idx, active) {
+  const param = jsonData.ConfigurationParameterDefinitions[idx];
+  if (active) {
+    // Restore to "true" only if it was previously forced off
+    if (param.IsEnabledExpression === 'false') param.IsEnabledExpression = 'true';
+    if (param.IsVisibleExpression === 'false') param.IsVisibleExpression = 'true';
+    if (param.isVisibleExpression === 'false') param.isVisibleExpression = 'true';
+  } else {
+    param.IsEnabledExpression = 'false';
+    param.IsVisibleExpression = 'false';
+  }
+  updatePreview();
+}
+
+// ─────────────────────────────────────────────
+// BUILD FORM
+// ─────────────────────────────────────────────
+function buildForm() {
+  document.getElementById('emptyState').style.display = 'none';
+  const fc = document.getElementById('formContent');
+  fc.style.display = 'block';
+  fc.innerHTML = '';
+
+  fc.appendChild(buildMetaCard());
+
+  // Group params by category
+  const categories = {};
+  jsonData.ConfigurationParameterDefinitions.forEach((param, idx) => {
+    if (ALWAYS_HIDDEN.includes(param.Id)) return;
+    if (FIXED_IDS.includes(param.Id)) return;
+    const cat = param.CategoryPath?.[0] ? str(param.CategoryPath[0], 'Sonstiges') : 'Sonstiges';
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push({ param, idx });
+  });
+
+  const catConfig = {
+    'LDAP - mandatory':               { icon: '🔑', open: true },
+    'LDAP - notwendig':               { icon: '🔑', open: true },
+    'General':                        { icon: '📋' },
+    'Allgemeines':                    { icon: '📋' },
+    'Password':                       { icon: '🔒' },
+    'Passwort':                       { icon: '🔒' },
+    'Address':                        { icon: '🏠' },
+    'Adresse':                        { icon: '🏠' },
+    'Attributes':                     { icon: '🏷️' },
+    'Attribute':                      { icon: '🏷️' },
+    'Extended attributes':            { icon: '⚙️' },
+    'Erweiterte Attribute':           { icon: '⚙️' },
+    'Employee':                       { icon: '👤' },
+    'Mitarbeiter':                    { icon: '👤' },
+    'Manager':                        { icon: '👔' },
+    'Vorgesetzter':                   { icon: '👔' },
+    'Add account memberships':        { icon: '👥', open: true },
+    'Gruppenmitgliedschaften hinzufügen': { icon: '👥', open: true },
+    'Change account memberships':     { icon: '👥', open: true },
+    'Gruppenmitgliedschaften ändern': { icon: '👥', open: true },
+    'Modification comment':           { icon: '💬', open: true },
+    'Änderungskommentar':             { icon: '💬', open: true },
+  };
+
+  Object.entries(categories).forEach(([cat, items]) => {
+    const cfg = catConfig[cat] || { icon: '📁' };
+    fc.appendChild(buildAccordion(cat, cfg, items));
+  });
+
+  updatePreview();
+}
+
+// ─────────────────────────────────────────────
+// META CARD
+// ─────────────────────────────────────────────
+// Felder, die gegenüber dem Original geändert werden müssen
+const MUST_FIELDS = [
+  { key: 'id',     el: 'meta_id',      label: 'Template-ID',            std: () => STANDARD.id },
+  { key: 'nameDe', el: 'meta_name_de', label: 'Name (Deutsch)',         std: () => STANDARD.nameDe },
+  { key: 'nameEn', el: 'meta_name_en', label: 'Name (Englisch)',        std: () => STANDARD.nameEn },
+  { key: 'descDe', el: 'meta_desc_de', label: 'Beschreibung (Deutsch)', std: () => STANDARD.descDe },
+  { key: 'descEn', el: 'meta_desc_en', label: 'Beschreibung (Englisch)', std: () => STANDARD.descEn }
+];
+
+function mustProblem(f) {
+  const el = document.getElementById(f.el);
+  if (!el) return '';
+  const v = el.value.trim();
+  if (v === '') return 'leer';
+  if (v.toLowerCase() === f.std().toLowerCase()) return 'noch wie das Original';
+  if (f.key === 'id' && !/^[A-Za-z0-9_.-]+$/.test(v)) return 'nur Buchstaben, Ziffern, _ . - erlaubt';
+  return '';
+}
+
+function openMustChange() {
+  return MUST_FIELDS.map(f => { const p = mustProblem(f); return p ? f.label + ' (' + p + ')' : ''; }).filter(Boolean);
+}
+
+function refreshMust() {
+  let open = 0;
+  MUST_FIELDS.forEach(f => {
+    const el = document.getElementById(f.el);
+    if (!el) return;
+    const field = el.closest('.field');
+    const p = mustProblem(f);
+    if (p) open++;
+    field.classList.toggle('must-open', !!p);
+    field.classList.toggle('must-ok', !p);
+    field.querySelector('.must-msg').textContent = p ? '⚠ ' + p + ' – ändern!' : '✓ geändert';
+  });
+  const box = document.getElementById('mustBox');
+  if (box) {
+    box.className = 'must-change ' + (open ? 'open' : 'done');
+    box.innerHTML = open
+      ? '<strong>Muss geändert werden:</strong> ' + open + ' von ' + MUST_FIELDS.length +
+        ' Angaben sind noch offen. Ohne neue ID und neue Menünamen überschreibt bzw. verdoppelt das Template den Standard-Menüpunkt „Neuen Benutzer erzeugen“ in CARO.'
+      : '<strong>✓ Alle Pflichtänderungen erledigt.</strong> ID und Menübezeichnungen unterscheiden sich vom Original.';
+  }
+  const btn = document.getElementById('btnSave');
+  if (btn) btn.classList.toggle('has-open', open > 0);
+}
+
+function buildMetaCard() {
+  const card = document.createElement('div');
+  card.className = 'meta-card';
+  card.innerHTML = `
+    <div class="meta-card-header">📝 Vorlage – ID, Menüname &amp; Beschreibung (muss geändert werden)</div>
+    <div class="must-change open" id="mustBox"></div>
+    <div class="meta-card-body">
+      <div class="field">
+        <div class="field-label">Template-ID <span class="badge-required">Pflicht</span></div>
+        <div class="id-prefix-row" style="display:flex;gap:6px;align-items:center">
+          <span style="padding:8px 10px;background:var(--bg);border:1px solid #cbd5e0;border-radius:6px;font-size:.8rem;color:#718096;white-space:nowrap">cts.manage.</span>
+          <input type="text" id="meta_id" placeholder="z.B. NewUserMarketing" style="flex:1">
+        </div>
+        <div class="field-hint">Eindeutig je Template, z. B. pro Abteilung. Nicht „${STANDARD.id}“.</div>
+        <div class="must-msg"></div>
+      </div>
+      <div class="field-grid two">
+        <div class="field"><div class="field-label">Name (Deutsch) – Menüpunkt in CARO</div><input type="text" id="meta_name_de"><div class="must-msg"></div></div>
+        <div class="field"><div class="field-label">Name (Englisch) – Menüpunkt in CARO</div><input type="text" id="meta_name_en"><div class="must-msg"></div></div>
+      </div>
+      <div class="field-grid two">
+        <div class="field"><div class="field-label">Beschreibung (Deutsch)</div><textarea id="meta_desc_de"></textarea><div class="must-msg"></div></div>
+        <div class="field"><div class="field-label">Beschreibung (Englisch)</div><textarea id="meta_desc_en"></textarea><div class="must-msg"></div></div>
+      </div>
+    </div>
+  `;
+
+  const idPart = (jsonData.Id || '').replace('cts.manage.', '');
+  card.querySelector('#meta_id').value = idPart;
+  card.querySelector('#meta_name_de').value = jsonData.Name?.Strings?.['de-DE'] || '';
+  card.querySelector('#meta_name_en').value = jsonData.Name?.Strings?.['en-US'] || '';
+  card.querySelector('#meta_desc_de').value = jsonData.Description?.Strings?.['de-DE'] || '';
+  card.querySelector('#meta_desc_en').value = jsonData.Description?.Strings?.['en-US'] || '';
+
+  function syncMeta() {
+    const idPart = card.querySelector('#meta_id').value || STANDARD.id;
+    jsonData.Id = 'cts.manage.' + idPart;
+    if (!jsonData.Name) jsonData.Name = { Strings: {} };
+    const de = card.querySelector('#meta_name_de').value;
+    const en = card.querySelector('#meta_name_en').value;
+    jsonData.Name.Strings['de-DE'] = de;
+    jsonData.Name.Strings['en-US'] = en;
+    jsonData.Name.Strings['en-GB'] = en;
+    if (!jsonData.Description) jsonData.Description = { Strings: {} };
+    jsonData.Description.Strings['de-DE'] = card.querySelector('#meta_desc_de').value;
+    jsonData.Description.Strings['en-US'] = card.querySelector('#meta_desc_en').value;
+    jsonData.Description.Strings['en-GB'] = card.querySelector('#meta_desc_en').value;
+    updatePreview();
+    refreshMust();
+  }
+  card.querySelectorAll('input, textarea').forEach(el => el.addEventListener('input', syncMeta));
+  // erst nach dem Einhängen ins Dokument auswerten
+  setTimeout(refreshMust, 0);
+  return card;
+}
+
+// ─────────────────────────────────────────────
+// ACCORDION
+// ─────────────────────────────────────────────
+function buildAccordion(cat, cfg, items) {
+  // Determine if section is currently active (all params active → section active)
+  const sectionActive = items.some(({param}) => isParamActive(param));
+
+  const acc = document.createElement('div');
+  acc.className = 'accordion';
+
+  const countRequired = () => items.filter(({param}) => isMarkedRequired(param)).length;
+  const header = document.createElement('div');
+  header.className = 'accordion-header' + (cfg.open ? ' open' : '');
+
+  // Section checkbox
+  const sectionCb = document.createElement('input');
+  sectionCb.type = 'checkbox';
+  sectionCb.className = 'section-toggle';
+  sectionCb.checked = sectionActive;
+  sectionCb.title = 'Gesamte Sektion ein-/ausblenden';
+
+  const badge = document.createElement('span');
+  badge.className = 'acc-badge' + (sectionActive ? '' : ' off');
+  badge.textContent = sectionActive ? items.length + ' Felder' : 'deaktiviert';
+
+  header.appendChild(sectionCb);
+  header.insertAdjacentHTML('beforeend', `
+    <span class="acc-icon">${cfg.icon}</span>
+    <span class="acc-title">${esc(cat)}</span>
+    <span class="acc-badge warn req-badge"></span>
+  `);
+  const reqBadge = header.querySelector('.req-badge');
+  const updReq = () => {
+    const n = countRequired();
+    reqBadge.textContent = n + ' Pflicht';
+    reqBadge.style.display = n ? '' : 'none';
+  };
+  updReq();
+  document.addEventListener('reqchange', updReq);
+  header.appendChild(badge);
+  header.insertAdjacentHTML('beforeend', '<span class="acc-chevron">▶</span>');
+
+  const body = document.createElement('div');
+  body.className = 'accordion-body' + (cfg.open ? ' open' : '') + (!sectionActive ? ' dimmed' : '');
+
+  // Build body content
+  if (cat === 'Password' || cat === 'Passwort') {
+    body.appendChild(buildPasswordSection(items));
+  } else if (cat === 'Extended attributes' || cat === 'Erweiterte Attribute') {
+    body.appendChild(buildExtendedAttrsSection(items));
+  } else {
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+    items.forEach(({param, idx}) => {
+      const f = buildField(param, idx);
+      if (f) grid.appendChild(f);
+    });
+    body.appendChild(grid);
+  }
+
+  // Section checkbox handler
+  sectionCb.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't toggle accordion open/close
+  });
+  sectionCb.addEventListener('change', () => {
+    const active = sectionCb.checked;
+    badge.textContent = active ? items.length + ' Felder' : 'deaktiviert';
+    badge.className = 'acc-badge' + (active ? '' : ' off');
+    body.classList.toggle('dimmed', !active);
+    acc.classList.toggle('section-disabled', !active);
+
+    items.forEach(({param, idx}) => {
+      if (FIXED_IDS.includes(param.Id)) return;
+      if (ALWAYS_HIDDEN.includes(param.Id)) return;
+      // Pflichtfelder bleiben immer aktiv
+      if (isMarkedRequired(param)) return;
+      setParamActive(idx, active);
+    });
+
+    // Sync individual field checkboxes
+    body.querySelectorAll('.field').forEach(f => {
+      const t = f.querySelector('.field-toggle');
+      if (t && t.disabled) return;      // Pflichtfeld bleibt unverändert
+      if (t) t.checked = active;
+      f.classList.toggle('field-disabled', !active);
+    });
+  });
+
+  // Accordion open/close (clicking header but not checkbox)
+  header.addEventListener('click', (e) => {
+    if (e.target === sectionCb) return;
+    header.classList.toggle('open');
+    body.classList.toggle('open');
+  });
+
+  acc.appendChild(header);
+  acc.appendChild(body);
+  return acc;
+}
+
+// ─────────────────────────────────────────────
+// FIELD (generic)
+// ─────────────────────────────────────────────
+function buildField(param, idx) {
+  return decorateRequired(buildFieldInner(param, idx), param, idx);
+}
+
+// Pflicht-Checkbox in die Beschriftungszeile jedes passenden Felds einsetzen
+function decorateRequired(wrap, param, idx) {
+  if (!wrap) return wrap;
+  wrap.querySelectorAll('.badge-required').forEach(b => b.remove());
+  const locked = isRequired(param);
+  const supported = locked ||
+    ([3, 13, 311, 110].includes(param.DataType) && !param.AutoValueExpression);
+  const row = wrap.querySelector('.field-label-row');
+  if (!supported || !row) return wrap;
+
+  const ctl = document.createElement('label');
+  ctl.className = 'req-ctl' + (locked ? ' locked' : '');
+  ctl.title = locked ? 'Pflicht ist fest vorgegeben (CARO braucht diesen Wert)'
+                     : 'Pflichtfeld: muss bei der Benutzeranlage in CARO ausgefüllt werden';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = isMarkedRequired(param);
+  cb.disabled = locked;
+  ctl.appendChild(cb);
+  ctl.appendChild(document.createTextNode('Pflicht'));
+  ctl.addEventListener('click', e => e.stopPropagation());
+  row.appendChild(ctl);
+
+  const toggle = wrap.querySelector('.field-toggle');
+  function apply(on) {
+    wrap.classList.toggle('field-required', on);
+    if (!toggle) return;
+    if (on) {
+      toggle.checked = true;
+      toggle.disabled = true;           // Pflichtfeld muss aktiv sein
+      wrap.classList.remove('field-disabled');
+      setParamActive(idx, true);
+    } else {
+      toggle.disabled = false;
+    }
+  }
+  apply(cb.checked);
+  cb.addEventListener('change', () => { setRequired(idx, cb.checked); apply(cb.checked); });
+  return wrap;
+}
+
+function buildFieldInner(param, idx) {
+  const dataType = param.DataType;
+  const label    = str(param.Label, param.VariableName);
+  const hint     = str(param.Description, '');
+  const isAuto   = !!param.AutoValueExpression;
+  const req      = isRequired(param);
+  const active   = isParamActive(param);
+
+  if (ALWAYS_HIDDEN.includes(param.Id)) return null;
+
+  // Manager (Vorgesetzter) = single account reference, editable via sAMAccountName
+  if (param.Id === MANAGER_ID) return buildManagerField(param, idx);
+
+  // DataType 302 / 110 = system references
+  if (dataType === 302 || dataType === 110) {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `
+      <div class="field-label-row">
+        <div class="field-label">${esc(label)} <span class="badge-fixed">Systemreferenz</span></div>
+      </div>
+      <div style="padding:8px 10px;background:#f7f7f7;border:1px solid #e2e8f0;border-radius:6px;font-size:.8rem;color:#999;font-style:italic">
+        Wird vom System gesetzt
+      </div>
+    `;
+    return div;
+  }
+
+  // DataType 311 = group membership (special)
+  if (dataType === 311) return buildGroupMembershipField(param, idx);
+
+  // DataType 11 = DateTime (handled via SetAccountExpires toggle)
+  if (dataType === 11) return null;
+
+  // DataType 0 = Boolean in Password section → handled separately
+  if (dataType === 0 && isInPasswordCategory(param)) return null;
+
+  // DataType 40 = modification comment
+  if (dataType === 40) {
+    return buildTextareaField(param, idx, label, hint, true /* req */);
+  }
+
+  // DataType 0 = Boolean toggle
+  if (dataType === 0) {
+    return buildBooleanField(param, idx, label, hint, req, active);
+  }
+
+  // DataType 1 = Integer
+  if (dataType === 1) {
+    return buildIntegerField(param, idx, label, hint, req, active);
+  }
+
+  // DataType 102 = Password
+  if (dataType === 102) {
+    return buildPasswordField(param, idx, label, hint);
+  }
+
+  // DataType 13 = String list
+  if (dataType === 13) {
+    return buildStringListField(param, idx, label, hint, req, active);
+  }
+
+  // DataType 3 = String (default)
+  return buildStringField(param, idx, label, hint, isAuto, req, active);
+}
+
+function isInPasswordCategory(param) {
+  const cat = param.CategoryPath?.[0] ? str(param.CategoryPath[0]) : '';
+  return cat.includes('Password') || cat.includes('Passwort');
+}
+
+// ── wrap a field with optional toggle checkbox ──
+function wrapWithToggle(param, idx, active, req, innerEl) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.title = 'Feld ein-/ausschalten';
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+
+  wrap.appendChild(labelRow);
+  wrap.appendChild(innerEl);
+  return { wrap, labelRow };
+}
+
+function buildStringField(param, idx, label, hint, isAuto, req, active) {
+  const inner = document.createElement('div');
+  inner.style.display = 'contents';
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.innerHTML = `${esc(label)}
+    ${isAuto ? '<span class="badge-auto">Auto</span>' : ''}
+    ${req && !isAuto ? '<span class="badge-required">Pflicht</span>' : ''}`;
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = param.DefaultValue || '';
+  if (isAuto) inp.classList.add('auto-field');
+  if (isAuto) inp.placeholder = 'Wird automatisch berechnet…';
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+    if (isAuto) inp.classList.toggle('auto-field', inp.value === '');
+    updatePreview();
+  });
+
+  const { wrap, labelRow } = wrapWithToggle(param, idx, active, req, document.createElement('span'));
+  labelRow.appendChild(labelEl);
+  wrap.appendChild(inp);
+  if (hint && hint !== label) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function buildTextareaField(param, idx, label, hint, req) {
+  const div = document.createElement('div');
+  div.className = 'field';
+  div.innerHTML = `
+    <div class="field-label-row">
+      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
+    </div>
+    <textarea placeholder="Begründung / Kommentar…" rows="3"></textarea>
+    ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+  `;
+  const ta = div.querySelector('textarea');
+  ta.value = param.DefaultValue || '';
+  ta.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = ta.value;
+    updatePreview();
+  });
+  return div;
+}
+
+function buildBooleanField(param, idx, label, hint, req, active) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const row = document.createElement('div');
+  row.className = 'toggle-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.title = 'Feld ein-/ausschalten';
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    row.appendChild(cb);
+  }
+
+  const lbl = document.createElement('label');
+  lbl.textContent = label;
+
+  const tog = document.createElement('label');
+  tog.className = 'toggle';
+  const togCb = document.createElement('input');
+  togCb.type = 'checkbox';
+  togCb.checked = !!param.DefaultValue;
+  const sl = document.createElement('span');
+  sl.className = 'slider';
+  tog.appendChild(togCb); tog.appendChild(sl);
+  togCb.addEventListener('change', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = togCb.checked;
+    updatePreview();
+  });
+
+  row.appendChild(lbl); row.appendChild(tog);
+  wrap.appendChild(row);
+  if (hint) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function buildIntegerField(param, idx, label, hint, req, active) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = label;
+  labelRow.appendChild(labelEl);
+
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.value = param.DefaultValue ?? 0;
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = parseInt(inp.value) || 0;
+    updatePreview();
+  });
+
+  wrap.appendChild(labelRow);
+  wrap.appendChild(inp);
+  if (hint) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function buildPasswordField(param, idx, label, hint) {
+  const div = document.createElement('div');
+  div.className = 'field';
+  div.innerHTML = `
+    <div class="field-label-row">
+      <div class="field-label">${esc(label)} <span class="badge-required">Pflicht</span></div>
+    </div>
+    <div class="pw-wrap">
+      <input type="password" value="${esc(param.DefaultValue || '')}">
+      <button class="pw-eye" type="button" onclick="togglePw(this)">👁</button>
+    </div>
+    ${hint ? `<div class="field-hint">${esc(hint)}</div>` : ''}
+  `;
+  const inp = div.querySelector('input');
+  inp.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+    updatePreview();
+  });
+  return div;
+}
+
+function buildStringListField(param, idx, label, hint, req, active) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = label;
+  labelRow.appendChild(labelEl);
+
+  const vals = Array.isArray(param.DefaultValue) ? param.DefaultValue : [param.DefaultValue || ''];
+  const ta = document.createElement('textarea');
+  ta.value = vals.join('\n');
+  ta.placeholder = 'Mehrere Einträge zeilenweise';
+  ta.addEventListener('input', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
+      ta.value.split('\n');
+    updatePreview();
+  });
+
+  wrap.appendChild(labelRow);
+  wrap.appendChild(ta);
+  if (hint) {
+    const h = document.createElement('div');
+    h.className = 'field-hint';
+    h.textContent = hint + ' (Zeilenweise)';
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+// ─────────────────────────────────────────────
+// GROUP MEMBERSHIP FIELD (DataType 311)
+// ─────────────────────────────────────────────
+function buildGroupMembershipField(param, idx) {
+  // Extract current group names from DefaultValue or __DefaultValue
+  let initialGroups = [];
+  const dv = param.DefaultValue;
+  if (typeof dv === 'string' && dv.includes('queryInList')) {
+    initialGroups = extractGroupsFromQuery(dv);
+  } else {
+    // Check __DefaultValue for example groups
+    const dvTemplate = param['__DefaultValue'];
+    if (dvTemplate && typeof dvTemplate === 'string') {
+      initialGroups = extractGroupsFromQuery(dvTemplate);
+    }
+  }
+
+  const active = isParamActive(param);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+  wrap.style.gridColumn = '1 / -1'; // full width
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'field-toggle';
+  cb.checked = active;
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => {
+    wrap.classList.toggle('field-disabled', !cb.checked);
+    setParamActive(idx, cb.checked);
+  });
+  labelRow.appendChild(cb);
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = str(param.Label, 'Gruppenmitgliedschaften');
+  labelRow.appendChild(labelEl);
+  wrap.appendChild(labelRow);
+
+  const info = document.createElement('div');
+  info.className = 'group-info';
+  info.textContent = 'Trage die sAMAccountNames der Gruppen ein, in die der neue Benutzer aufgenommen werden soll. Leer lassen = keine Gruppen zuweisen.';
+  wrap.appendChild(info);
+
+  const listEl = document.createElement('div');
+  listEl.className = 'group-list';
+  wrap.appendChild(listEl);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn-add-group';
+  addBtn.textContent = '+ Gruppe hinzufügen';
+  wrap.appendChild(addBtn);
+
+  function syncGroups() {
+    const names = Array.from(listEl.querySelectorAll('input[type="text"]'))
+      .map(i => i.value.trim())
+      .filter(v => v !== '');
+    if (names.length === 0) {
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = [];
+    } else {
+      const quoted = names.map(n => `'${n}'`).join(', ');
+      jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
+        GROUP_QUERY_TEMPLATE.replace('GROUPS', quoted);
+    }
+    updatePreview();
+  }
+
+  function addGroupRow(value = '') {
+    const row = document.createElement('div');
+    row.className = 'group-row';
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = value;
+    inp.placeholder = 'sAMAccountName der Gruppe…';
+    inp.addEventListener('input', syncGroups);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Gruppe entfernen';
+    removeBtn.addEventListener('click', () => {
+      row.remove();
+      syncGroups();
+    });
+
+    row.appendChild(inp);
+    row.appendChild(removeBtn);
+    listEl.appendChild(row);
+    inp.focus();
+  }
+
+  addBtn.addEventListener('click', () => addGroupRow());
+
+  // Populate with initial groups (from template as examples)
+  initialGroups.forEach(g => addGroupRow(g));
+  // If none, add one empty row
+  if (initialGroups.length === 0) addGroupRow();
+
+  syncGroups(); // sync initial state
+
+  return wrap;
+}
+
+function extractGroupsFromQuery(queryStr) {
+  // Extract array content from queryInList('samAccountName', ['A', 'B', ...])
+  const match = queryStr.match(/queryInList\('samAccountName',\s*\[([^\]]*)\]/);
+  if (!match) return [];
+  return match[1]
+    .split(',')
+    .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+// ─────────────────────────────────────────────
+// MANAGER FIELD (DataType 110, single account reference)
+// ─────────────────────────────────────────────
+function buildManagerField(param, idx) {
+  const dv = param.DefaultValue;
+  let initialManager = '';
+  if (typeof dv === 'string' && dv.includes('queryEqual')) {
+    initialManager = extractManagerFromQuery(dv);
+  }
+
+  const active = isParamActive(param);
+  const req = isRequired(param);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+
+  if (!req) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'field-toggle';
+    cb.checked = active;
+    cb.title = 'Feld ein-/ausschalten';
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      wrap.classList.toggle('field-disabled', !cb.checked);
+      setParamActive(idx, cb.checked);
+    });
+    labelRow.appendChild(cb);
+  }
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'field-label';
+  labelEl.textContent = str(param.Label, 'Vorgesetzter');
+  labelRow.appendChild(labelEl);
+  wrap.appendChild(labelRow);
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = initialManager;
+  inp.placeholder = 'sAMAccountName des Vorgesetzten…';
+  inp.addEventListener('input', () => {
+    const name = inp.value.trim();
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
+      name === '' ? [] : MANAGER_QUERY_TEMPLATE.replace('MANAGER', name);
+    updatePreview();
+  });
+  wrap.appendChild(inp);
+
+  return wrap;
+}
+
+function extractManagerFromQuery(queryStr) {
+  // Extract value from queryEqual('samAccountName', 'NAME')
+  const match = queryStr.match(/queryEqual\('samAccountName',\s*'([^']*)'/);
+  return match ? match[1] : '';
+}
+
+// ─────────────────────────────────────────────
+// PASSWORD SECTION (special layout)
+// ─────────────────────────────────────────────
+function buildPasswordSection(items) {
+  const wrap = document.createElement('div');
+  const pwParam   = items.find(({param}) => param.DataType === 102);
+  const flagParams = items.filter(({param}) => param.DataType === 0);
+  const others    = items.filter(({param}) => param.DataType !== 102 && param.DataType !== 0);
+
+  if (pwParam) {
+    wrap.appendChild(buildPasswordField(pwParam.param, pwParam.idx,
+      str(pwParam.param.Label, 'Kennwort'),
+      str(pwParam.param.Description, '')));
+    const spacer = document.createElement('div');
+    spacer.style.marginTop = '14px';
+    wrap.appendChild(spacer);
+  }
+
+  if (flagParams.length) {
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.textContent = 'Konto-Optionen';
+    wrap.appendChild(lbl);
+
+    const grid = document.createElement('div');
+    grid.className = 'flags-grid';
+    flagParams.forEach(({param, idx}) => {
+      const item = buildFlagItem(param, idx);
+      if (item) grid.appendChild(item);
+    });
+    wrap.appendChild(grid);
+  }
+
+  if (others.length) {
+    const g2 = document.createElement('div');
+    g2.className = 'field-grid';
+    g2.style.marginTop = '14px';
+    others.forEach(({param, idx}) => {
+      const f = buildField(param, idx);
+      if (f) g2.appendChild(f);
+    });
+    wrap.appendChild(g2);
+  }
+
+  return wrap;
+}
+
+function buildFlagItem(param, idx) {
+  const item = document.createElement('label');
+  item.className = 'flag-item';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!param.DefaultValue;
+  cb.addEventListener('change', () => {
+    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = cb.checked;
+    updatePreview();
+  });
+  const span = document.createElement('span');
+  span.textContent = str(param.Label, param.VariableName);
+  item.appendChild(cb);
+  item.appendChild(span);
+  return item;
+}
+
+// ─────────────────────────────────────────────
+// EXTENDED ATTRIBUTES SECTION
+// ─────────────────────────────────────────────
+function buildExtendedAttrsSection(items) {
+  const wrap = document.createElement('div');
+  const toggleItem = items.find(({param}) => param.VariableName === 'editExtendedAttributes');
+  const attrItems  = items.filter(({param}) => param.VariableName !== 'editExtendedAttributes');
+
+  if (toggleItem) {
+    const row = document.createElement('div');
+    row.className = 'toggle-row';
+    row.style.marginBottom = '14px';
+    const lbl = document.createElement('label');
+    lbl.textContent = str(toggleItem.param.Label, 'Erweiterte Attribute bearbeiten');
+    lbl.style.fontWeight = '600';
+    const tog = document.createElement('label');
+    tog.className = 'toggle';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!toggleItem.param.DefaultValue;
+    const sl = document.createElement('span');
+    sl.className = 'slider';
+    tog.appendChild(cb); tog.appendChild(sl);
+    row.appendChild(lbl); row.appendChild(tog);
+    wrap.appendChild(row);
+
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+    attrItems.forEach(({param, idx}) => {
+      const f = buildField(param, idx);
+      if (f) grid.appendChild(f);
+    });
+    grid.style.opacity = cb.checked ? '1' : '.4';
+    grid.style.pointerEvents = cb.checked ? '' : 'none';
+    wrap.appendChild(grid);
+
+    cb.addEventListener('change', () => {
+      jsonData.ConfigurationParameterDefinitions[toggleItem.idx].DefaultValue = cb.checked;
+      grid.style.opacity = cb.checked ? '1' : '.4';
+      grid.style.pointerEvents = cb.checked ? '' : 'none';
+      updatePreview();
+    });
+  }
+  return wrap;
+}
+
+// ─────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────
+function togglePw(btn) {
+  const inp = btn.previousElementSibling;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+</script>
+</body>
+</html>
