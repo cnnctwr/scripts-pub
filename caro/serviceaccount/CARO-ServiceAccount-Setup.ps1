@@ -1,6 +1,6 @@
 # CARO-ServiceAccount-Setup.ps1 - Einzeldatei-Fassung (nicht von Hand bearbeiten)
 # Erzeugt aus src/ mit scripts/build_single_file.py. Der Hash dient nur der Aktualitaetspruefung.
-# Quell-Hash: 6d55c51e2cf3477fa11c6586f6f7b6bb3c41812fd7305bc4d780858ad9946eea
+# Quell-Hash: 60dcb918c75b202f9aae435ab8ddfbd8394bbd1a3dfdce21561b7b2d464eda25
 <#
 .SYNOPSIS
     Legt einen Service-Account fuer die CARO-Suite an und vergibt die dafuer noetigen Rechte.
@@ -2349,14 +2349,30 @@ function Read-CaroDatabaseSettings {
                 if (-not $conn.Ok) {
                     $kind = 'connection'
                     $problem = 'Mit dem SQL-Server {0} konnte keine Verbindung hergestellt werden: {1}' -f (Get-CaroSqlInstanceName -Server $server -Instance $instance), $conn.Detail
+                    if ($conn.Detail -match 'error: 26|Error Locating|nicht gefunden|not found') {
+                        $problem += " Hinweis: Probieren Sie den vollstaendigen Rechnernamen (z. B. srv.firma.local) oder localhost. Bei einer benannten Instanz muss der Dienst SQL Server-Browser laufen."
+                    }
                 }
-                elseif (-not (Test-CaroSqlSysadmin -Server $server -Instance $instance)) {
-                    $kind = 'rights'
-                    $problem = 'Ihr Konto hat im SQL-Server keine sysadmin-Rechte. Damit kann das Skript Datenbank, Login und Rechte nicht selbst vergeben.'
+                else {
+                    $info = Get-CaroSqlRightsInfo -Server $server -Instance $instance
+                    if ($info.Sysadmin) {
+                        Write-CaroMessage -Message ('Verbunden als {0} (sysadmin).' -f $info.LoginName) -Level 'OK'
+                    }
+                    else {
+                        $kind = 'rights'
+                        $problem = 'Ihr Konto {0} hat im SQL-Server keine sysadmin-Rechte (sysadmin: {1}, dbcreator: {2}, securityadmin: {3}). Damit kann das Skript Datenbank, Login und Rechte nicht selbst vergeben.' -f $info.LoginName, $info.Sysadmin, $info.Dbcreator, $info.Securityadmin
+                    }
                 }
                 if ($kind -eq 'ok') { break }
 
                 Write-CaroMessage -Message $problem -Level 'WARN'
+                if ($kind -eq 'rights') {
+                    $admins = @(Get-CaroSqlSysadmins -Server $server -Instance $instance)
+                    if ($admins.Count -gt 0) { Write-CaroMessage -Message ('Konten mit sysadmin (soweit fuer Sie sichtbar): {0}' -f ($admins -join '; ')) -Level 'INFO' }
+                    foreach ($line in @(Get-CaroSqlSetupAdminAccounts -Server $server)) {
+                        Write-CaroMessage -Message ('Laut SQL-Setup auf diesem Rechner: {0}' -f $line) -Level 'INFO'
+                    }
+                }
                 $actions = @()
                 if ($kind -eq 'connection') { $actions += @{ Id = 'retry'; Label = 'Server und Instanz neu eingeben' } }
                 $actions += @{ Id = 'back'; Label = 'Andere Option waehlen (zurueck zu den Rechten)' }
@@ -3159,14 +3175,52 @@ function Test-CaroSqlConnection {
     catch { return [pscustomobject]@{ Ok = $false; Detail = $_.Exception.Message } }
 }
 
-# Ist der ausfuehrende Admin im SQL-Server sysadmin? Nur damit kann das Skript Datenbank, Login und Rechte anlegen.
-function Test-CaroSqlSysadmin {
+# Mit welchem Konto ist das Skript im SQL-Server angemeldet, und welche Serverrollen hat es?
+# Das Skript kann Datenbank, Login und Rechte nur vergeben, wenn dieses Konto sysadmin ist.
+function Get-CaroSqlRightsInfo {
     param(
         [Parameter(Mandatory = $true)][string]$Server,
         [string]$Instance = ''
     )
-    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query "SELECT IS_SRVROLEMEMBER('sysadmin') AS V")
-    return ($r.Count -gt 0 -and [int]$r[0].V -eq 1)
+    $q = "SELECT SUSER_SNAME() AS LoginName, IS_SRVROLEMEMBER('sysadmin') AS Sysadmin, IS_SRVROLEMEMBER('dbcreator') AS Dbcreator, IS_SRVROLEMEMBER('securityadmin') AS Securityadmin"
+    $r = @(Invoke-CaroSql -Server $Server -Instance $Instance -Query $q)
+    return [pscustomobject]@{
+        LoginName     = [string]$r[0].LoginName
+        Sysadmin      = ([int]$r[0].Sysadmin -eq 1)
+        Dbcreator     = ([int]$r[0].Dbcreator -eq 1)
+        Securityadmin = ([int]$r[0].Securityadmin -eq 1)
+    }
+}
+
+# Konten mit sysadmin, soweit sie fuer das angemeldete Konto sichtbar sind (ohne Rechte ist die Sicht oft eingeschraenkt).
+function Get-CaroSqlSysadmins {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [string]$Instance = ''
+    )
+    try {
+        $q = "SELECT m.name AS N FROM sys.server_role_members rm JOIN sys.server_principals r ON r.principal_id = rm.role_principal_id JOIN sys.server_principals m ON m.principal_id = rm.member_principal_id WHERE r.name = 'sysadmin'"
+        return @(Invoke-CaroSql -Server $Server -Instance $Instance -Query $q | ForEach-Object { [string]$_.N })
+    }
+    catch { return @() }
+}
+
+# Laeuft der SQL-Server auf diesem Rechner? Dann nennt die Setup-Konfiguration die Konten, die bei der Installation
+# als sysadmin eingetragen wurden (Zeile SQLSYSADMINACCOUNTS).
+function Get-CaroSqlSetupAdminAccounts {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Server)
+    $short = ConvertTo-CaroShortName -Name $Server
+    $localNames = @('.', 'localhost', '(local)', (ConvertTo-CaroShortName -Name ([System.Environment]::MachineName)))
+    if ($localNames -notcontains $short) { return @() }
+    $found = @()
+    try {
+        $pattern = Join-Path $env:ProgramFiles 'Microsoft SQL Server\*\Setup Bootstrap\Log\*\ConfigurationFile.ini'
+        foreach ($f in @(Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue)) {
+            foreach ($m in @(Select-String -Path $f.FullName -Pattern '^\s*SQLSYSADMINACCOUNTS\s*=')) { $found += $m.Line.Trim() }
+        }
+    }
+    catch { return @() }
+    return @($found | Select-Object -Unique)
 }
 
 function Test-CaroSqlDatabaseExists {

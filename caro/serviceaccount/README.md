@@ -210,6 +210,10 @@ CARO schreibt seine Daten in eine SQL-Datenbank. Dafür braucht es ein Konto mit
 
 **Direkte Vergabe:** Das Skript fragt SQL-Server (Rechnername) und Instanz (Enter = Standardinstanz), verbindet sich mit dem Windows-Konto des ausführenden Admins und prüft, ob dieser `sysadmin` ist. Ist keine Verbindung möglich oder fehlen Rechte, bietet es an: Server neu eingeben, eine andere Option wählen (ein Schritt zurück zu Rechten und Vergabe), eine **SQL-Datei für den DBA** erzeugen oder abbrechen.
 
+**Wer hat sysadmin?** Hat dein Konto keine `sysadmin`-Rechte, nennt das Skript in der Meldung das Konto, mit dem es sich verbunden hat, dessen Serverrollen (sysadmin, dbcreator, securityadmin) und, soweit sichtbar, die Konten mit `sysadmin`. Läuft der SQL-Server auf demselben Rechner, zeigt es außerdem die Konten aus der Setup-Konfiguration der Installation (Zeile `SQLSYSADMINACCOUNTS`). Ein extra Prüfbefehl ist nicht nötig. Bei SQL Server ab 2008 sind lokale Administratoren nicht automatisch `sysadmin`. Das Login `sa` ist ein SQL-Konto und existiert nur im SQL-Server, nicht im AD, und ist oft deaktiviert.
+
+Kommt beim Verbinden Fehler 26 („Server/Instanz nicht gefunden“), weist das Skript darauf hin, den vollständigen Rechnernamen oder `localhost` zu probieren und dass bei einer benannten Instanz der Dienst „SQL Server-Browser“ laufen muss.
+
 **SQL-Datei für den DBA:** `...-CARO-SA-Datenbank.sql` im Ordner der Logdateien. Sie enthält Datenbank (falls nötig), Login, Benutzer und Rolle. Bei einem SQL-Konto steht darin ein Platzhalter statt des Kennworts, das Kennwort gibt der Admin dem DBA auf sicherem Weg.
 
 **Hinweise für den CARO-Configurator:** Am Ende von Plan und Apply listet das Skript, was im Bereich „Datenbank“ des Configurators einzutragen ist: SQL-Server, Instanz, DB-Name, Benutzer, Windows-Domäne und ob „Windows-Konto verwenden“ gilt. Das Kennwort steht nie darin.
