@@ -1239,13 +1239,8 @@ function buildGroupMembershipField(param, idx) {
   const dv = param.DefaultValue;
   if (typeof dv === 'string' && dv.includes('queryInList')) {
     initialGroups = extractGroupsFromQuery(dv);
-  } else {
-    // Check __DefaultValue for example groups
-    const dvTemplate = param['__DefaultValue'];
-    if (dvTemplate && typeof dvTemplate === 'string') {
-      initialGroups = extractGroupsFromQuery(dvTemplate);
-    }
   }
+  // Keine Vorbelegung: die Beispielgruppen der Original-Vorlage (__DefaultValue) werden bewusst nicht übernommen.
 
   const active = isParamActive(param);
 
