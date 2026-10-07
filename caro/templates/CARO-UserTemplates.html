@@ -299,6 +299,8 @@
   .target-bar button { background: none; border: none; color: var(--brand-deep); font-weight: 700; cursor: pointer; font-size: .78rem; }
   .target-bar button:hover { text-decoration: underline; }
 
+  .export-info { background: #2c3642; color: #cbd5e0; font-size: .72rem; padding: 8px 14px; line-height: 1.4; }
+
   /* ── Empty state ── */
   .empty-state { text-align: center; padding: 60px 20px; color: #a0aec0; }
   .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
@@ -316,14 +318,13 @@
   <div class="topbar-actions">
     <label for="fileInput" class="btn btn-light">📂 JSON laden</label>
     <input type="file" id="fileInput" accept=".json">
-    <button class="btn btn-light" id="btnTarget" onclick="chooseTargetDir()" title="Ordner einmal wählen – jedes Speichern landet danach dort">📁 Zielordner wählen</button>
     <button class="btn btn-save" id="btnSave" onclick="downloadJSON()">💾 JSON speichern</button>
   </div>
 </div>
 <div class="target-bar">
   <span>Zielordner in CARO: <code id="caroPath">C:\ProgramData\CUSATUM Service GmbH\CARO\tools\manage</code>
     <button onclick="copyCaroPath()">kopieren</button></span>
-  <span id="targetInfo">Gewählter Speicherort: noch keiner – Speichern öffnet den Dialog bzw. lädt herunter.</span>
+  <span>„JSON speichern“ legt die Datei im Download-Ordner ab – von dort an diesen Pfad kopieren.</span>
 </div>
 
 <div id="toast"></div>
@@ -344,6 +345,7 @@
         <span>JSON Vorschau</span>
         <span id="previewLabel" style="opacity:.6;font-weight:400">–</span>
       </div>
+      <div id="exportInfo" class="export-info"></div>
       <div id="jsonOutput">// Lade eine JSON-Datei…</div>
     </div>
   </div>
@@ -371,6 +373,7 @@ const GROUP_QUERY_TEMPLATE =
 const LOCKED_REQUIRED_IDS = [
   'cts.mandatoryLdapParameter.AccountGivenname',
   'cts.mandatoryLdapParameter.AccountSurname',
+  'cts.mandatoryLdapParameter.AccountUserPrincipalName',   // ohne UPN keine normale Anmeldung
   'cts.passwordParameter.Password',
   'cts.modificationComment',
   'cts.createNewAccount.LdapOuResource'
@@ -385,7 +388,7 @@ const STANDARD = {
 };
 const MANAGER_ID = 'cts.ldapParameter.AccountManager';
 const MANAGER_QUERY_TEMPLATE =
-  "@@services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items@@";
+  "@@toTypedArray('System.String', [ '{\"Id\":\"' + getAt(getAt(services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items, 0).AccountReferences, 0).Id + '\",\"Type\":' + getAt(getAt(services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items, 0).AccountReferences, 0).Type.ToString() + ',\"ClaimId\":' + getAt(getAt(services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items, 0).AccountReferences, 0).ClaimId.ToString() + '}' ])@@";
 
 // ─────────────────────────────────────────────
 // FILE LOADING
@@ -419,81 +422,15 @@ function toast(msg, duration = 2500) {
 }
 
 // ─────────────────────────────────────────────
-// ZIELORDNER (merkt sich den Ordner im Browser; nur Chrome/Edge)
+// SPEICHERN (Download in den Download-Ordner des Browsers)
 // ─────────────────────────────────────────────
-let targetDir = null;
-const DB_NAME = 'caro-usertemplates', DB_STORE = 'kv';
-
-function idb() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(DB_NAME, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(DB_STORE);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-async function idbGet(key) {
-  const db = await idb();
-  return new Promise((res, rej) => {
-    const q = db.transaction(DB_STORE).objectStore(DB_STORE).get(key);
-    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
-  });
-}
-async function idbSet(key, val) {
-  const db = await idb();
-  return new Promise((res, rej) => {
-    const t = db.transaction(DB_STORE, 'readwrite');
-    t.objectStore(DB_STORE).put(val, key);
-    t.oncomplete = () => res(); t.onerror = () => rej(t.error);
-  });
-}
-
-function showTargetInfo() {
-  const el = document.getElementById('targetInfo');
-  const btn = document.getElementById('btnTarget');
-  if (!window.showDirectoryPicker) {
-    el.textContent = 'Dieser Browser kann keinen festen Zielordner merken – Speichern lädt in den Download-Ordner (Chrome/Edge nutzen).';
-    btn.style.display = 'none';
-    return;
-  }
-  if (targetDir) {
-    el.innerHTML = 'Gewählter Speicherort: <code>' + esc(targetDir.name) + '</code> (jedes Speichern landet dort)';
-    btn.textContent = '📁 Zielordner: ' + targetDir.name;
-  } else {
-    el.textContent = 'Gewählter Speicherort: noch keiner – „Zielordner wählen“ klicken (einmalig).';
-    btn.textContent = '📁 Zielordner wählen';
-  }
-}
-
-async function chooseTargetDir() {
-  if (!window.showDirectoryPicker) { toast('⚠️ Browser unterstützt das nicht – bitte Chrome/Edge', 4000); return; }
-  try {
-    targetDir = await window.showDirectoryPicker({ id: 'caro-templates', mode: 'readwrite' });
-    try { await idbSet('targetDir', targetDir); } catch (e) { /* Merken nicht möglich, gilt dann nur für diese Sitzung */ }
-    showTargetInfo();
-    toast('📁 Zielordner: ' + targetDir.name);
-  } catch (err) {
-    if (err.name === 'AbortError') return;
-    toast('❌ Ordner nicht wählbar: ' + err.message + ' – ggf. Zwischenordner nehmen', 5000);
-  }
-}
-
-async function restoreTargetDir() {
-  try { targetDir = (await idbGet('targetDir')) || null; } catch (e) { targetDir = null; }
-  showTargetInfo();
-}
-restoreTargetDir();
-
 function copyCaroPath() {
   const t = document.getElementById('caroPath').textContent;
   (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
     .then(() => toast('📋 Pfad kopiert'), () => toast('Pfad bitte manuell markieren und kopieren'));
 }
 
-// ─────────────────────────────────────────────
-// SPEICHERN
-// ─────────────────────────────────────────────
-async function downloadJSON() {
+function downloadJSON() {
   if (!jsonData) { toast('⚠️ Bitte zuerst eine Datei laden'); return; }
 
   const open = openMustChange();
@@ -501,60 +438,92 @@ async function downloadJSON() {
     'Es sind noch Pflichtänderungen offen:\n\n• ' + open.join('\n• ') +
     '\n\nOhne diese Änderungen heißt der Menüpunkt in CARO wie das Original bzw. kollidiert die ID.\n\nTrotzdem speichern?')) return;
 
-  const str = JSON.stringify(jsonData, null, 2);
-  const filename = (jsonData.Id || 'template') + '.json';
-
-  // 1) Gemerkter Zielordner
-  if (targetDir) {
-    try {
-      let perm = await targetDir.queryPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') perm = await targetDir.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        let existed = true;
-        try { await targetDir.getFileHandle(filename); } catch (e) { existed = false; }
-        const fh = await targetDir.getFileHandle(filename, { create: true });
-        const w = await fh.createWritable();
-        await w.write(str);
-        await w.close();
-        toast('💾 ' + (existed ? 'Überschrieben: ' : 'Neu angelegt: ') + targetDir.name + '/' + filename, 4000);
-        return;
-      }
-      toast('⚠️ Kein Zugriff auf den Zielordner – bitte erneut wählen', 4000);
-      return;
-    } catch (err) {
-      toast('❌ Speichern im Zielordner fehlgeschlagen: ' + err.message, 5000);
-      return;
-    }
-  }
-
-  // 2) Speichern-unter-Dialog
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: 'JSON-Datei', accept: { 'application/json': ['.json'] } }]
-      });
-      const writable = await handle.createWritable();
-      await writable.write(str);
-      await writable.close();
-      toast('💾 Gespeichert als ' + handle.name);
-      return;
-    } catch (err) {
-      if (err.name === 'AbortError') return; // Nutzer hat Dialog abgebrochen
-      toast('❌ Speichern fehlgeschlagen: ' + err.message, 4000);
-      return;
-    }
-  }
-
-  // 3) Fallback für Browser ohne File System Access API (z.B. Firefox)
+  const str = JSON.stringify(buildExport().out, null, 2);
   const blob = new Blob([str], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = (jsonData.Id || 'template') + '.json';
   a.click();
   URL.revokeObjectURL(url);
-  toast('💾 Gespeichert als ' + a.download);
+  toast('💾 Gespeichert als ' + a.download + ' (Download-Ordner)');
+}
+
+// ─────────────────────────────────────────────
+// EXPORT: abgewählte Felder samt Pipeline-Zeilen entfernen
+// (getestet in CARO: Abschnitte „Adresse“ / „Erweiterte Attribute“ verschwinden, Anlage läuft)
+// ─────────────────────────────────────────────
+function buildExport() {
+  const out = JSON.parse(JSON.stringify(jsonData));
+  const info = { removed: [], kept: [], dropped: [], hidden: 0 };
+  const P = out.ConfigurationParameterDefinitions;
+  const protectedIds = new Set([...FIXED_IDS, ...ALWAYS_HIDDEN, ...LOCKED_REQUIRED_IDS]);
+  const varsOf = text => new Set([...String(text).matchAll(/CreateNewUser\.(\w+)/g)].map(m => m[1]));
+
+  const acts = out.TaskPipelineDefinition?.Tasks?.[0]?.Configuration?.Parameter?.Actions || [];
+  const propsAp = acts[0]?.ActionParameters?.find(ap => ap.Name === 'ResourceCreateProperties');
+  const props = propsAp ? propsAp.Value : [];
+
+  // Nur GANZE Abschnitte entfernen (alle Felder der Kategorie abgewählt, keines geschützt).
+  // Einzelne abgewählte Felder bleiben in der Vorlage und sind nur unsichtbar (IsVisibleExpression).
+  const catOf = p => (p.CategoryPath && p.CategoryPath[0]) ? str(p.CategoryPath[0], 'Sonstiges') : 'Sonstiges';
+  const groups = {};
+  P.forEach(p => { (groups[catOf(p)] = groups[catOf(p)] || []).push(p); });
+  const removableCats = new Set(Object.keys(groups).filter(c =>
+    groups[c].every(p => !isParamActive(p) && !protectedIds.has(p.Id))));
+  const candidate = new Set(P.filter(p => removableCats.has(catOf(p))).map(p => p.Id));
+  let R = new Set(candidate);
+
+  // Vorgesetzter abgewählt: Zeile für den DN in der Pipeline mit entfernen
+  if (R.has(MANAGER_ID) && acts[0]) {
+    delete acts[0]._setManagerDN;
+    const i = props.findIndex(x => x.Name === 'manager');
+    if (i >= 0) { info.dropped.push('manager'); props.splice(i, 1); }
+  }
+
+  const varOf = id => P.find(p => p.Id === id).VariableName;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const rvars = new Map([...R].map(id => [varOf(id), id]));
+    const keep = id => { if (R.delete(id)) changed = true; };
+
+    // Verweise außerhalb der Attribut-Liste (z. B. Name, Gruppen-Schleife)
+    const other = JSON.stringify(out.TaskPipelineDefinition, (k, v) => (v === props ? [] : v));
+    varsOf(other).forEach(v => { if (rvars.has(v)) keep(rvars.get(v)); });
+
+    // Attribut-Zeilen, die zusätzlich noch andere (behaltene) Felder nutzen
+    props.forEach(x => {
+      const used = varsOf(JSON.stringify(x.Values));
+      const inter = [...used].filter(v => rvars.has(v));
+      if (inter.length && inter.length < used.size) inter.forEach(v => keep(rvars.get(v)));
+    });
+
+    // Verweise aus verbleibenden Feldern (Ausdrücke, Abhängigkeiten)
+    const remaining = P.filter(p => !R.has(p.Id));
+    const text = remaining.map(p => JSON.stringify([p.IsEnabledExpression, p.IsVisibleExpression,
+      p.isVisibleExpression, p.AutoValueExpression, p.InitialValueExpression, p.DependingParameterIds])).join('\n');
+    rvars.forEach((id, v) => {
+      if (new RegExp('\\b' + v + '\\b').test(text) || text.includes(id)) keep(id);
+    });
+  }
+
+  const rvars = new Map([...R].map(id => [varOf(id), id]));
+  if (propsAp) {
+    propsAp.Value = props.filter(x => {
+      const used = varsOf(JSON.stringify(x.Values));
+      const drop = [...used].some(v => rvars.has(v));
+      if (drop) info.dropped.push(x.Name);
+      return !drop;
+    });
+  }
+  P.filter(p => R.has(p.Id)).forEach(p => info.removed.push(str(p.Label, p.VariableName)));
+  out.ConfigurationParameterDefinitions = P.filter(p => !R.has(p.Id));
+  out.ConfigurationParameterDefinitions.forEach(p => {
+    if (candidate.has(p.Id)) info.kept.push(str(p.Label, p.VariableName));   // Abschnitt abgewählt, aber Feld wird noch gebraucht
+    else if (!isParamActive(p) && !protectedIds.has(p.Id)) info.hidden++;
+  });
+  return { out, info };
 }
 
 // ─────────────────────────────────────────────
@@ -562,8 +531,15 @@ async function downloadJSON() {
 // ─────────────────────────────────────────────
 function updatePreview() {
   if (!jsonData) return;
-  document.getElementById('jsonOutput').textContent = JSON.stringify(jsonData, null, 2);
+  const { out, info } = buildExport();
+  document.getElementById('jsonOutput').textContent = JSON.stringify(out, null, 2);
   document.getElementById('previewLabel').textContent = jsonData.Id || '';
+  const el = document.getElementById('exportInfo');
+  if (el) {
+    el.textContent = 'Beim Speichern entfernt (ganze Abschnitte): ' + info.removed.length + ' Felder, ' + info.dropped.length + ' Attribut-Zeilen' +
+      (info.hidden ? ' · einzeln ausgeblendet: ' + info.hidden : '') +
+      (info.kept.length ? ' · Abschnitt abgewählt, aber noch gebraucht (nur ausgeblendet): ' + info.kept.join(', ') : '');
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -612,15 +588,27 @@ function isParamActive(param) {
          param.IsVisibleExpression !== 'false';
 }
 
+// Originalausdrücke merken, damit „wieder einschalten“ den Ursprungszustand herstellt
+const origExpr = new WeakMap();
+
 // Enable or disable a parameter in jsonData
 function setParamActive(idx, active) {
   const param = jsonData.ConfigurationParameterDefinitions[idx];
+  const keys = ['IsEnabledExpression', 'IsVisibleExpression', 'isVisibleExpression'];
   if (active) {
-    // Restore to "true" only if it was previously forced off
-    if (param.IsEnabledExpression === 'false') param.IsEnabledExpression = 'true';
-    if (param.IsVisibleExpression === 'false') param.IsVisibleExpression = 'true';
-    if (param.isVisibleExpression === 'false') param.isVisibleExpression = 'true';
+    const o = origExpr.get(param);
+    keys.forEach(k => {
+      if (param[k] !== 'false') return;
+      if (o && k in o) { if (o[k] === undefined) delete param[k]; else param[k] = o[k]; }
+      else param[k] = 'true';
+    });
+    origExpr.delete(param);
   } else {
+    if (!origExpr.has(param) && isParamActive(param)) {
+      const o = {};
+      keys.forEach(k => { o[k] = param[k]; });
+      origExpr.set(param, o);
+    }
     param.IsEnabledExpression = 'false';
     param.IsVisibleExpression = 'false';
   }
@@ -1401,17 +1389,30 @@ function buildManagerField(param, idx) {
   labelRow.appendChild(labelEl);
   wrap.appendChild(labelRow);
 
+  // Der Name wird in CARO beim Öffnen der Maske gegen das AD aufgelöst (wie bei den Gruppen).
+  // Getestet: Das Feld erwartet einen Text mit der Konto-Referenz {"Id":SID,"Type":1,"ClaimId":…}.
   const inp = document.createElement('input');
   inp.type = 'text';
   inp.value = initialManager;
   inp.placeholder = 'sAMAccountName des Vorgesetzten…';
+  const msg = document.createElement('div');
+  msg.className = 'must-msg';
   inp.addEventListener('input', () => {
     const name = inp.value.trim();
+    const bad = /['"\\\[\]:;|=,+*?<>@\/\s]/.test(name);
+    msg.textContent = bad ? '⚠ Ungültiges Zeichen im Namen (nur der sAMAccountName, ohne Domäne/Leerzeichen)' : '';
+    if (bad) return;
     jsonData.ConfigurationParameterDefinitions[idx].DefaultValue =
-      name === '' ? [] : MANAGER_QUERY_TEMPLATE.replace('MANAGER', name);
+      name === '' ? [] : MANAGER_QUERY_TEMPLATE.split('MANAGER').join(name);
     updatePreview();
   });
   wrap.appendChild(inp);
+  wrap.appendChild(msg);
+  const info = document.createElement('div');
+  info.className = 'group-info';
+  info.textContent = 'sAMAccountName eintragen. CARO löst ihn beim Öffnen der Maske gegen das AD auf und trägt den Vorgesetzten vor. ' +
+    'Leer lassen = Auswahl im CARO-Dialog über die Suche. Gibt es den Namen im AD nicht, meldet CARO vermutlich einen Fehler (nicht getestet).';
+  wrap.appendChild(info);
 
   return wrap;
 }
