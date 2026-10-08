@@ -204,6 +204,7 @@
   .toggle-row   { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
   .toggle-row label { font-size: .875rem; color: #2d3748; cursor: pointer; flex: 1; }
   .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+  .toggle-row label.toggle { flex: none; }
   .toggle input { opacity: 0; width: 0; height: 0; }
   .slider { position: absolute; inset: 0; background: #cbd5e0; border-radius: 20px; cursor: pointer; transition: background .2s; }
   .slider:before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform .2s; }
@@ -261,6 +262,40 @@
   #jsonOutput::-webkit-scrollbar { width: 6px; }
   #jsonOutput::-webkit-scrollbar-track { background: #1e272e; }
   #jsonOutput::-webkit-scrollbar-thumb { background: #37474f; border-radius: 3px; }
+
+  /* ── Bildungsvorschrift (schreibgeschützt) ── */
+  .rule-row { display: flex; gap: 6px; align-items: stretch; }
+  .rule-row input { flex: 1; min-width: 0; }
+  .field input.rule-field { font-family: 'Consolas', 'Courier New', monospace; font-size: .78rem; font-style: normal; cursor: default; }
+  .btn-copy { background: var(--brand-tint); color: var(--brand-deep); border: 1px solid var(--brand-line); border-radius: 6px; padding: 0 12px; font-size: .78rem; font-weight: 600; cursor: pointer; }
+  .btn-copy:hover { background: var(--brand-line); }
+
+  /* ── Auswahl der Bildungsvorschrift (Anzeigename / Allgemeiner Name) ── */
+  .preset-box { display: grid; gap: 6px; margin: 4px 0 0 22px; padding-left: 14px; border-left: 3px solid var(--brand-line); }
+  .preset-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .preset-row input[type="radio"] { accent-color: var(--brand); flex-shrink: 0; cursor: pointer; }
+  .preset-label { width: 205px; flex-shrink: 0; font-size: .76rem; font-weight: 400; color: #5a6678; }
+  .preset-row input[type="text"] { flex: 1; min-width: 0; }
+
+  /* ── Ablaufdatum ── */
+  .expiry-box { display: grid; gap: 8px; margin: 4px 0 0 22px; padding-left: 14px; border-left: 3px solid var(--brand-line); }
+  .exp-row { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #2d3748; cursor: pointer; flex-wrap: wrap; }
+  .exp-row input[type="radio"] { accent-color: var(--brand); cursor: pointer; flex-shrink: 0; }
+  .exp-row em { font-style: normal; font-size: .72rem; color: #718096; }
+  .exp-row input.exp-days { width: 84px; padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: .85rem; }
+  .exp-row input.exp-fixed { padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: .85rem; font-family: inherit; }
+  .exp-note { font-size: .74rem; color: #4a5568; padding-left: 24px; }
+  .exp-error { font-size: .76rem; font-weight: 600; color: #c53030; padding-left: 24px; }
+  .exp-error:empty, .exp-note:empty { display: none; }
+
+  /* ── Testmodus ── */
+  .test-toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; padding: 8px 12px; background: var(--bg); border: 1px dashed var(--brand-line); border-radius: 8px; font-size: .78rem; color: #718096; }
+  .test-toolbar.active { background: #fffbea; border: 1px solid var(--accent); color: #744210; font-weight: 600; }
+  .btn-test { background: var(--brand-tint); color: var(--brand-deep); border: 1px solid var(--brand-line); border-radius: 6px; padding: 6px 12px; font-size: .8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .btn-test:hover { background: var(--brand-line); }
+  .field input.name-locked { background: #f1f1f1 !important; color: #555; cursor: not-allowed; }
+  .field input.rule-result { font-family: inherit; font-size: .9rem; font-weight: 600; color: #2d3748; background: #fffbea; border-color: var(--accent); }
+  .btn-save:disabled { opacity: .45; cursor: not-allowed; }
 
   /* ── Pflichtfeld-Checkbox je Feld ── */
   .req-ctl {
@@ -373,7 +408,9 @@ const GROUP_QUERY_TEMPLATE =
 const LOCKED_REQUIRED_IDS = [
   'cts.mandatoryLdapParameter.AccountGivenname',
   'cts.mandatoryLdapParameter.AccountSurname',
+  'cts.mandatoryLdapParameter.AccountSamAccountName',      // Pflicht in der JSON (Mindestlänge 1), im AD Pflichtattribut
   'cts.mandatoryLdapParameter.AccountUserPrincipalName',   // ohne UPN keine normale Anmeldung
+  'cts.ldapParameter.AccountCn',                           // Name des Objekts im Verzeichnis (ResourceCreateName)
   'cts.passwordParameter.Password',
   'cts.modificationComment',
   'cts.createNewAccount.LdapOuResource'
@@ -386,6 +423,44 @@ const STANDARD = {
   descDe: 'Erzeugt einen neuen Standardbenutzer (nativ).',
   descEn: 'Create new standard user (native).'
 };
+// Diese vier Felder zeigen ihre echte Bildungsvorschrift (AutoValueExpression aus der JSON), schreibgeschützt
+const SHOW_RULE = [];   // (frühere Einzelanzeige, ersetzt durch die Auswahl unten)
+// Anzeigename und Allgemeiner Name: Auswahl aus drei fest geprüften Vorschriften (je Feld eine eigene Auswahl)
+const PRESET_FIELDS = ['AccountDisplayName', 'AccountCn', 'AccountSamAccountName', 'AccountUserPrincipalName'];
+const NAME_PRESETS = [
+  { label: 'Nachname, Vorname', expr: "AccountSurname + ', ' + AccountGivenname", calc: (g, s) => s + ', ' + g },   // Standard
+  { label: 'Vorname Nachname',  expr: "AccountGivenname + ' ' + AccountSurname",   calc: (g, s) => g + ' ' + s },
+  { label: 'Vorname.Nachname',  expr: "AccountGivenname + '.' + AccountSurname",   calc: (g, s) => g + '.' + s }
+];
+// SamAccountName und UserPrincipalName: nutzen die bereinigten Hilfsfelder (Umlaute, Leerzeichen); Zeilen 0 = Standard
+const sam = (f) => (g, s) => f(stdReplace(g), stdReplace(s));
+const SAM_PRESETS = [
+  { label: 'Vorname.Nachname',            expr: "(AccountGivennameReplace + '.' + AccountSurnameReplace).slice(0,20)",                         calc: sam((g, s) => (g + '.' + s).slice(0, 20)), needsHelpers: true },
+  { label: 'V.Nachname',                  expr: "(AccountGivennameReplace.slice(0,1) + '.' + AccountSurnameReplace).slice(0,20)",              calc: sam((g, s) => (g.slice(0, 1) + '.' + s).slice(0, 20)), needsHelpers: true },
+  { label: 'Nachname',                    expr: "AccountSurnameReplace.slice(0,20)",                                                           calc: sam((g, s) => s.slice(0, 20)), needsHelpers: true },
+  { label: 'V + 7 Buchstaben Nachname',   expr: "AccountGivennameReplace.slice(0,1) + AccountSurnameReplace.slice(0,7)",                       calc: sam((g, s) => g.slice(0, 1) + s.slice(0, 7)), needsHelpers: true },
+  { label: 'VornameNachname',             expr: "(AccountGivennameReplace + AccountSurnameReplace).slice(0,20)",                               calc: sam((g, s) => (g + s).slice(0, 20)), needsHelpers: true }
+];
+const upn = (f) => (g, s, suffix) => f(stdReplace(g), stdReplace(s)) + '@' + (suffix || '');
+const UPN_PRESETS = [
+  { label: 'Vorname.Nachname',            expr: "AccountGivennameReplace + '.' + AccountSurnameReplace + '@' + AccountUPNSuffix",              calc: upn((g, s) => g + '.' + s), needsHelpers: true },
+  { label: 'V.Nachname',                  expr: "AccountGivennameReplace.slice(0,1) + '.' + AccountSurnameReplace + '@' + AccountUPNSuffix",   calc: upn((g, s) => g.slice(0, 1) + '.' + s), needsHelpers: true },
+  { label: 'Nachname',                    expr: "AccountSurnameReplace + '@' + AccountUPNSuffix",                                              calc: upn((g, s) => s), needsHelpers: true },
+  { label: 'V + 7 Buchstaben Nachname',   expr: "AccountGivennameReplace.slice(0,1) + AccountSurnameReplace.slice(0,7) + '@' + AccountUPNSuffix", calc: upn((g, s) => g.slice(0, 1) + s.slice(0, 7)), needsHelpers: true },
+  { label: 'VornameNachname',             expr: "AccountGivennameReplace + AccountSurnameReplace + '@' + AccountUPNSuffix",                    calc: upn((g, s) => g + s), needsHelpers: true }
+];
+const PRESETS_BY_FIELD = {
+  AccountDisplayName: NAME_PRESETS, AccountCn: NAME_PRESETS,
+  AccountSamAccountName: SAM_PRESETS, AccountUserPrincipalName: UPN_PRESETS
+};
+const AUTO_PLACEHOLDERS = {
+  AccountUPNSuffix: 'Wird automatisch ermittelt…'
+};
+const NAME_FIELD_IDS = { 'cts.mandatoryLdapParameter.AccountGivenname': 'given', 'cts.mandatoryLdapParameter.AccountSurname': 'surname' };
+const isNameField = p => p.Id in NAME_FIELD_IDS;
+const UPN_SUFFIX_ID = 'cts.mandatoryLdapParameter.AccountUPNSuffix';
+// Originalberechnung von CARO: alle DC=-Teile des DN der OU, mit Punkt verbunden (z. B. caro-demo.local)
+const UPN_SUFFIX_DEFAULT_EXPR = "(LdapOuResource?.[0]?.Properties?.find(p => p.Name === 'distinguishedname')?.Values?.[0]?.match(/DC=([^,]+)/g)?.map(dc => dc.replace('DC=', ''))?.join('.')?.toLowerCase()) ?? ''";
 const MANAGER_ID = 'cts.ldapParameter.AccountManager';
 const MANAGER_QUERY_TEMPLATE =
   "@@toTypedArray('System.String', [ '{\"Id\":\"' + getAt(getAt(services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items, 0).AccountReferences, 0).Id + '\",\"Type\":' + getAt(getAt(services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items, 0).AccountReferences, 0).Type.ToString() + ',\"ClaimId\":' + getAt(getAt(services.live.Accounts.QueryAccounts(queryAnd(queryEqual('objectClass', 'user'), queryEqual('samAccountName', 'MANAGER')), toTypedArray('System.Int32', [ 1 ])).Items, 0).AccountReferences, 0).ClaimId.ToString() + '}' ])@@";
@@ -432,6 +507,8 @@ function copyCaroPath() {
 
 function downloadJSON() {
   if (!jsonData) { toast('⚠️ Bitte zuerst eine Datei laden'); return; }
+  if (testMode) { toast('⚠️ Im Testmodus ist Speichern gesperrt – Testmodus beenden', 4000); return; }
+  if (expiryInvalid) { toast('⚠️ ' + expiryInvalid, 5000); return; }
 
   const open = openMustChange();
   if (open.length && !confirm(
@@ -447,6 +524,105 @@ function downloadJSON() {
   a.click();
   URL.revokeObjectURL(url);
   toast('💾 Gespeichert als ' + a.download + ' (Download-Ordner)');
+}
+
+// ─────────────────────────────────────────────
+// TESTMODUS (Abschnitt „LDAP - notwendig“)
+// Zeigt mit Beispielnamen, was die Bildungsvorschriften ergeben. Es wird nichts in die JSON geschrieben,
+// Speichern ist gesperrt. Gerechnet wird NUR, wenn die Vorschrift in der geladenen JSON genau der
+// bekannten Standardvorschrift entspricht (kein eval/Function auf Text aus der Datei).
+// ─────────────────────────────────────────────
+let testMode = false;
+let ldapReg = { rules: {}, presets: {} };
+const testVals = { given: '', surname: '', suffix: '' };
+const STD_RULES = {
+  "AccountGivennameReplace": "(AccountGivenname ?? '').replace(' ','').replace(/\u00e4/g,'ae').replace(/\u00f6/g,'oe').replace(/\u00fc/g,'ue').replace(/\u00c4/g,'Ae').replace(/\u00d6/g,'Oe').replace(/\u00dc/g,'Ue').replace(/\u00df/g,'ss').normalize('NFD').replace(/[\u0300\u0300-\u036f]/g,'')",
+  "AccountSurnameReplace": "(AccountSurname ?? '').replace(' ','').replace(/\u00e4/g,'ae').replace(/\u00f6/g,'oe').replace(/\u00fc/g,'ue').replace(/\u00c4/g,'Ae').replace(/\u00d6/g,'Oe').replace(/\u00dc/g,'Ue').replace(/\u00df/g,'ss').normalize('NFD').replace(/[\u0300\u0300-\u036f]/g,'')",
+  "AccountSamAccountName": "(AccountGivennameReplace + '.' + AccountSurnameReplace).slice(0,20)",
+  "AccountUserPrincipalName": "AccountGivennameReplace + '.' + AccountSurnameReplace + '@' + AccountUPNSuffix",
+  "AccountDisplayName": "AccountSurname + ', ' + AccountGivenname",
+  "AccountCn": "AccountSurname + ', ' + AccountGivenname"
+};
+
+function stdReplace(v) {
+  return String(v == null ? '' : v).replace(' ', '')
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+    .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function ruleText(variable) {
+  const p = jsonData.ConfigurationParameterDefinitions.find(q => q.VariableName === variable);
+  return p ? p.AutoValueExpression : undefined;
+}
+
+// Die Hilfsvorschriften (Umlaute/Leerzeichen) müssen dem bekannten Standard entsprechen, sonst wird nicht gerechnet
+function helpersOk() {
+  return ['AccountGivennameReplace', 'AccountSurnameReplace'].every(v => ruleText(v) === STD_RULES[v]);
+}
+
+// (nicht mehr genutzt) Ergebnis für ein Feld, oder null, wenn die Vorschrift nicht der bekannten Standardvorschrift entspricht
+function testResult(variable) {
+  const needs = {
+    AccountSamAccountName:    ['AccountSamAccountName', 'AccountGivennameReplace', 'AccountSurnameReplace'],
+    AccountUserPrincipalName: ['AccountUserPrincipalName', 'AccountGivennameReplace', 'AccountSurnameReplace']
+  }[variable];
+  if (!needs || !needs.every(v => ruleText(v) === STD_RULES[v])) return null;
+  const g = testVals.given, s = testVals.surname;
+  const gr = stdReplace(g), sr = stdReplace(s);
+  switch (variable) {
+    case 'AccountSamAccountName':    return (gr + '.' + sr).slice(0, 20);
+    case 'AccountUserPrincipalName': return gr + '.' + sr + '@' + testVals.suffix;
+    default:                         return null;
+  }
+}
+
+function refreshTest() {
+  Object.entries(ldapReg.rules).forEach(([variable, r]) => {
+    let text = r.expr, isResult = false;
+    if (testMode && (testVals.given !== '' || testVals.surname !== '')) {
+      const res = testResult(variable);
+      if (res !== null) { text = res; isResult = true; }
+    }
+    r.inp.value = text;
+    r.inp.classList.toggle('rule-result', isResult);
+    r.inp.classList.toggle('rule-field', !isResult);
+  });
+  Object.values(ldapReg.presets).forEach(lines => lines.forEach(l => {
+    const show = testMode && l.calc && (testVals.given !== '' || testVals.surname !== '') && (!l.needsHelpers || helpersOk());
+    l.inp.value = show ? l.calc(testVals.given, testVals.surname, testVals.suffix) : l.expr;
+    l.inp.classList.toggle('rule-result', !!show);
+    l.inp.classList.toggle('rule-field', !show);
+  }));
+}
+
+function setTestMode(on) {
+  testMode = on;
+  const cur = key => jsonData.ConfigurationParameterDefinitions[ldapReg[key].idx];
+  if (on) {
+    testVals.given = ''; testVals.surname = '';
+    testVals.suffix = ldapReg.suffix ? (cur('suffix').DefaultValue || '') : '';
+  }
+  ['given', 'surname'].forEach(k => {
+    const r = ldapReg[k]; if (!r) return;
+    r.inp.readOnly = !on;
+    r.inp.value = on ? '' : (cur(k).DefaultValue || '');
+    r.inp.classList.toggle('name-locked', !on);
+    r.inp.placeholder = on ? (k === 'given' ? 'Beispiel: Jörg' : 'Beispiel: Müller') : '';
+  });
+  if (ldapReg.suffix) ldapReg.suffix.inp.value = on ? testVals.suffix : (cur('suffix').DefaultValue || '');
+  if (ldapReg.suffix) ldapReg.suffix.inp.classList.toggle('auto-field', ldapReg.suffix.inp.value === '');
+  refreshTest();
+  const tb = document.getElementById('testToolbar');
+  if (tb) {
+    tb.classList.toggle('active', on);
+    tb.querySelector('button').textContent = on ? '✓ Testmodus beenden' : '🧪 Testmodus';
+    tb.querySelector('span').textContent = on
+      ? 'Testmodus aktiv: Beispielnamen eintippen. Nichts wird gespeichert, Speichern ist gesperrt.'
+      : 'Zeigt mit Beispielnamen, was die Bildungsvorschriften ergeben (wird nicht gespeichert).';
+  }
+  const sv = document.getElementById('btnSave');
+  if (sv) { sv.disabled = on; sv.title = on ? 'Im Testmodus gesperrt – Testmodus beenden' : ''; }
 }
 
 // ─────────────────────────────────────────────
@@ -619,6 +795,11 @@ function setParamActive(idx, active) {
 // BUILD FORM
 // ─────────────────────────────────────────────
 function buildForm() {
+  testMode = false;
+  expiryInvalid = '';
+  ldapReg = { rules: {}, presets: {} };
+  testVals.given = ''; testVals.surname = ''; testVals.suffix = '';
+  const svBtn = document.getElementById('btnSave'); if (svBtn) svBtn.disabled = false;
   document.getElementById('emptyState').style.display = 'none';
   const fc = document.getElementById('formContent');
   fc.style.display = 'block';
@@ -828,11 +1009,27 @@ function buildAccordion(cat, cfg, items) {
   } else {
     const grid = document.createElement('div');
     grid.className = 'field-grid';
+    // Abschnitt „LDAP - notwendig“: Vorname und Nachname nebeneinander, alle anderen Felder je in einer eigenen Zeile
+    const isLdapMandatory = cat === 'LDAP - notwendig' || cat === 'LDAP - mandatory';
+    if (isLdapMandatory) {
+      grid.style.gridTemplateColumns = '1fr 1fr';
+      const tb = document.createElement('div');
+      tb.id = 'testToolbar';
+      tb.className = 'test-toolbar';
+      tb.innerHTML = '<button type="button" class="btn-test">🧪 Testmodus</button><span></span>';
+      tb.querySelector('button').addEventListener('click', () => setTestMode(!testMode));
+      body.appendChild(tb);
+    }
     items.forEach(({param, idx}) => {
       const f = buildField(param, idx);
-      if (f) grid.appendChild(f);
+      if (!f) return;
+      const pair = param.Id === 'cts.mandatoryLdapParameter.AccountGivenname' ||
+                   param.Id === 'cts.mandatoryLdapParameter.AccountSurname';
+      if (isLdapMandatory && !pair) f.style.gridColumn = '1 / -1';
+      grid.appendChild(f);
     });
     body.appendChild(grid);
+    if (isLdapMandatory) setTestMode(false);
   }
 
   // Section checkbox handler
@@ -925,9 +1122,17 @@ function decorateRequired(wrap, param, idx) {
 
 function buildFieldInner(param, idx) {
   const dataType = param.DataType;
-  const label    = str(param.Label, param.VariableName);
-  const hint     = str(param.Description, '');
-  const isAuto   = !!param.AutoValueExpression;
+  const isSuffix0 = param.VariableName === 'SetAccountExpires';
+  const label    = isSuffix0 ? 'Ablaufdatum des Kontos' : str(param.Label, param.VariableName);
+  const isSuffix = param.Id === UPN_SUFFIX_ID;
+  const isExpiry = param.VariableName === 'SetAccountExpires';
+  const showRule = SHOW_RULE.includes(param.VariableName) && !!param.AutoValueExpression;
+  const hint     = isSuffix ? 'FQDN der Domäne (DC-Teile), z. B.: meine.firma.gmbh'
+                 : (showRule || PRESET_FIELDS.includes(param.VariableName)) ? 'wird automatisch gebildet'
+                 : isNameField(param) ? 'wird in CARO eingegeben'
+                 : isExpiry ? 'Aus: Das Konto läuft nie ab. An: In CARO erscheint ein Datumsfeld für das Ablaufdatum.'
+                 : str(param.Description, '');
+  const isAuto   = !!param.AutoValueExpression || isSuffix;
   const req      = isRequired(param);
   const active   = isParamActive(param);
 
@@ -964,6 +1169,9 @@ function buildFieldInner(param, idx) {
   if (dataType === 40) {
     return buildTextareaField(param, idx, label, hint, true /* req */);
   }
+
+  // Ablaufdatum des Kontos: eigene Auswahl (nie / nach N Tagen / festes Datum)
+  if (param.VariableName === 'SetAccountExpires') return buildExpiryField(param, idx);
 
   // DataType 0 = Boolean toggle
   if (dataType === 0) {
@@ -1035,16 +1243,65 @@ function buildStringField(param, idx, label, hint, isAuto, req, active) {
   inp.type = 'text';
   inp.value = param.DefaultValue || '';
   if (isAuto) inp.classList.add('auto-field');
-  if (isAuto) inp.placeholder = 'Wird automatisch berechnet…';
+  if (isAuto) inp.placeholder = AUTO_PLACEHOLDERS[param.VariableName] || 'Wird automatisch berechnet…';
+  const isSuffix = param.Id === UPN_SUFFIX_ID;
+  const suffixOrigExpr = (param.InitialValueExpression && !/^'/.test(param.InitialValueExpression))
+    ? param.InitialValueExpression : UPN_SUFFIX_DEFAULT_EXPR;   // CARO-Berechnung der Domäne
+  if (isNameField(param)) {
+    // Vorname/Nachname: im Template nicht beschreibbar (nur im Testmodus mit Beispielnamen, ohne zu speichern)
+    inp.readOnly = true;
+    inp.classList.add('name-locked');
+    inp.title = 'Wird in CARO eingegeben – im Template nicht änderbar';
+    ldapReg[NAME_FIELD_IDS[param.Id]] = { inp, idx };
+  }
+  if (param.Id === UPN_SUFFIX_ID) ldapReg.suffix = { inp, idx };
   inp.addEventListener('input', () => {
-    jsonData.ConfigurationParameterDefinitions[idx].DefaultValue = inp.value;
+    if (testMode) {   // Testmodus: nur Beispielwerte, nichts in die JSON schreiben
+      if (isNameField(param)) testVals[NAME_FIELD_IDS[param.Id]] = inp.value;
+      else if (param.Id === UPN_SUFFIX_ID) { testVals.suffix = inp.value; inp.classList.toggle('auto-field', inp.value === ''); }
+      refreshTest();
+      return;
+    }
+    const cur = jsonData.ConfigurationParameterDefinitions[idx];
+    cur.DefaultValue = inp.value;
+    if (isSuffix) {
+      // eigener Wert ersetzt die Berechnung von CARO; leer = Berechnung wie im Original
+      if (inp.value.trim() === '') cur.InitialValueExpression = suffixOrigExpr;
+      else cur.InitialValueExpression = "'" + inp.value.trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+    }
     if (isAuto) inp.classList.toggle('auto-field', inp.value === '');
     updatePreview();
   });
 
   const { wrap, labelRow } = wrapWithToggle(param, idx, active, req, document.createElement('span'));
   labelRow.appendChild(labelEl);
-  wrap.appendChild(inp);
+  if (PRESET_FIELDS.includes(param.VariableName) && param.AutoValueExpression) {
+    wrap.appendChild(buildPresetChoice(param, idx));
+  } else if (SHOW_RULE.includes(param.VariableName) && param.AutoValueExpression) {
+    // Stufe 1: echte Bildungsvorschrift anzeigen (nicht editierbar), mit Kopieren-Knopf
+    inp.value = param.AutoValueExpression;
+    inp.readOnly = true;
+    inp.title = 'Bildungsvorschrift aus der JSON (nicht editierbar)';
+    inp.classList.add('auto-field', 'rule-field');
+    inp.placeholder = '';
+    ldapReg.rules[param.VariableName] = { inp, expr: param.AutoValueExpression };
+    const row = document.createElement('div');
+    row.className = 'rule-row';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn-copy';
+    copy.textContent = 'kopieren';
+    copy.title = 'Bildungsvorschrift in die Zwischenablage kopieren';
+    copy.addEventListener('click', () => {
+      (navigator.clipboard ? navigator.clipboard.writeText(param.AutoValueExpression) : Promise.reject())
+        .then(() => toast('📋 Bildungsvorschrift kopiert'), () => { inp.select(); toast('Bitte mit Strg+C kopieren'); });
+    });
+    row.appendChild(inp);
+    row.appendChild(copy);
+    wrap.appendChild(row);
+  } else {
+    wrap.appendChild(inp);
+  }
   if (hint && hint !== label) {
     const h = document.createElement('div');
     h.className = 'field-hint';
@@ -1052,6 +1309,46 @@ function buildStringField(param, idx, label, hint, isAuto, req, active) {
     wrap.appendChild(h);
   }
   return wrap;
+}
+
+function buildPresetChoice(param, idx) {
+  const box = document.createElement('div');
+  box.className = 'preset-box';
+  const group = 'preset_' + param.VariableName;
+  const cur = param.AutoValueExpression;
+  const options = PRESETS_BY_FIELD[param.VariableName].map(p => Object.assign({}, p));
+  const matched = options.findIndex(p => p.expr === cur);
+  // Abweichende Vorschrift aus der Datei: als eigene, unveränderte Zeile anzeigen und angewählt lassen
+  if (matched < 0) options.push({ label: 'aus der Datei (unverändert)', expr: cur, calc: null });
+  const selected = matched >= 0 ? matched : options.length - 1;
+  const lines = [];
+  options.forEach((p, i) => {
+    const row = document.createElement('label');
+    row.className = 'preset-row';
+    const rb = document.createElement('input');
+    rb.type = 'radio';
+    rb.name = group;
+    rb.checked = i === selected;
+    rb.addEventListener('change', () => {
+      if (!rb.checked) return;
+      jsonData.ConfigurationParameterDefinitions[idx].AutoValueExpression = p.expr;
+      updatePreview();
+    });
+    const lab = document.createElement('span');
+    lab.className = 'preset-label';
+    lab.textContent = i === 0 && matched >= 0 ? p.label + ' (Standard)' : p.label;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.readOnly = true;
+    inp.value = p.expr;
+    inp.title = p.expr;
+    inp.className = 'auto-field rule-field';
+    row.appendChild(rb); row.appendChild(lab); row.appendChild(inp);
+    box.appendChild(row);
+    lines.push({ inp, expr: p.expr, calc: p.calc, needsHelpers: !!p.needsHelpers });
+  });
+  ldapReg.presets[param.VariableName] = lines;
+  return box;
 }
 
 function buildTextareaField(param, idx, label, hint, req) {
@@ -1118,6 +1415,126 @@ function buildBooleanField(param, idx, label, hint, req, active) {
     h.textContent = hint;
     wrap.appendChild(h);
   }
+  return wrap;
+}
+
+// ─────────────────────────────────────────────
+// ABLAUFDATUM DES KONTOS (SetAccountExpires + AccountExpires)
+// Getestet in CARO (EXP1/EXP2): Startwert des Datumsfelds per Ausdruck, Ergebnis im AD tagesgenau mit 23:59:00.
+//  - „läuft nie ab“ = Original (Checkbox aus, Startwert heute)
+//  - „nach N Tagen“ = Checkbox gesetzt, Startwert heute + N Tage um 23:59
+//  - „festes Datum“ = Checkbox gesetzt, Startwert festes Datum mit Uhrzeit
+// ─────────────────────────────────────────────
+const EXPIRY_ORIG_EXPR = '(new Date())';
+const EXPIRY_DAYS_RE  = /^new Date\(new Date\(\)\.getFullYear\(\), new Date\(\)\.getMonth\(\), new Date\(\)\.getDate\(\) \+ (\d+), 23, 59, 0\)$/;
+const EXPIRY_FIXED_RE = /^new Date\('(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}):00'\)$/;
+const expiryDaysExpr  = n => 'new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + ' + n + ', 23, 59, 0)';
+const expiryFixedExpr = v => "new Date('" + v + ":00')";
+let expiryInvalid = '';   // Text der Fehlermeldung, solange die Eingabe ungültig ist (sperrt das Speichern)
+
+const pad2 = n => String(n).padStart(2, '0');
+const fmtDate = d => pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1) + '.' + d.getFullYear();
+const fmtInput = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+
+function buildExpiryField(param, idx) {
+  const P = jsonData.ConfigurationParameterDefinitions;
+  const setP  = P[idx];
+  const dateP = P.find(p => p.VariableName === 'AccountExpires');
+  if (!dateP) return buildBooleanField(param, idx, str(param.Label, ''), '', false, isParamActive(param));
+  const active = isParamActive(param);
+
+  // Modus aus der geladenen Vorlage erkennen
+  const expr = dateP.InitialValueExpression;
+  const on = !!setP.DefaultValue;
+  let mode = 'file', days = 30, fixed = null;
+  if (!on && (expr === undefined || expr === EXPIRY_ORIG_EXPR)) mode = 'never';
+  else if (on && EXPIRY_DAYS_RE.test(expr || '')) { mode = 'days'; days = parseInt(EXPIRY_DAYS_RE.exec(expr)[1], 10); }
+  else if (on && EXPIRY_FIXED_RE.test(expr || '')) { mode = 'fixed'; fixed = EXPIRY_FIXED_RE.exec(expr)[1]; }
+  if (fixed === null) { const d = new Date(); d.setDate(d.getDate() + 30); d.setHours(23, 59, 0, 0); fixed = fmtInput(d); }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+  wrap.style.gridColumn = '1 / -1';
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.className = 'field-toggle'; cb.checked = active; cb.title = 'Feld ein-/ausschalten';
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => { wrap.classList.toggle('field-disabled', !cb.checked); setParamActive(idx, cb.checked); });
+  labelRow.appendChild(cb);
+  const lab = document.createElement('div');
+  lab.className = 'field-label';
+  lab.textContent = 'Ablaufdatum des Kontos';
+  labelRow.appendChild(lab);
+  wrap.appendChild(labelRow);
+
+  const box = document.createElement('div');
+  box.className = 'expiry-box';
+  const group = 'expiry_mode';
+  const rows = {};
+  const mk = (value, html) => {
+    const row = document.createElement('label');
+    row.className = 'exp-row';
+    const rb = document.createElement('input');
+    rb.type = 'radio'; rb.name = group; rb.value = value; rb.checked = mode === value;
+    row.appendChild(rb);
+    const span = document.createElement('span');
+    span.innerHTML = html;
+    row.appendChild(span);
+    box.appendChild(row);
+    rows[value] = { row, rb };
+    rb.addEventListener('change', () => { if (rb.checked) { mode = value; apply(); } });
+    return span;
+  };
+  mk('never', 'Konto läuft nie ab <em>(Standard)</em>');
+  const dSpan = mk('days', 'Läuft ab nach <input type="number" class="exp-days" min="1" max="3650" step="1"> Tagen <em>(ab Anlage gerechnet, am Ablauftag um 23:59 Uhr)</em>');
+  const fSpan = mk('fixed', 'Festes Datum <input type="datetime-local" class="exp-fixed"> <em>(Uhrzeit frei wählbar, vorbelegt 23:59)</em>');
+  if (mode === 'file') mk('file', 'Einstellung aus der Datei <em>(unverändert)</em>');
+  const daysInp = dSpan.querySelector('.exp-days');
+  const fixedInp = fSpan.querySelector('.exp-fixed');
+  daysInp.value = days;
+  fixedInp.value = fixed;
+  const note = document.createElement('div'); note.className = 'exp-note';
+  const err = document.createElement('div'); err.className = 'exp-error';
+  box.appendChild(note); box.appendChild(err);
+  wrap.appendChild(box);
+
+  function apply() {
+    expiryInvalid = '';
+    err.textContent = '';
+    note.textContent = '';
+    if (mode === 'never') {
+      setP.DefaultValue = false;
+      dateP.InitialValueExpression = EXPIRY_ORIG_EXPR;
+    } else if (mode === 'days') {
+      const n = Number(daysInp.value);
+      if (daysInp.value === '' || !Number.isInteger(n) || n < 1 || n > 3650) {
+        expiryInvalid = 'Ablaufdatum: Bitte eine ganze Zahl von 1 bis 3650 Tagen eingeben.';
+      } else {
+        setP.DefaultValue = true;
+        dateP.InitialValueExpression = expiryDaysExpr(n);
+        const d = new Date(); d.setDate(d.getDate() + n);
+        note.textContent = 'Beispiel: Anlage heute (' + fmtDate(new Date()) + ') → Konto läuft ab am ' + fmtDate(d) + ', 23:59 Uhr';
+      }
+    } else if (mode === 'fixed') {
+      const v = fixedInp.value;
+      if (!v) expiryInvalid = 'Ablaufdatum: Bitte Datum und Uhrzeit wählen.';
+      else if (new Date(v).getTime() <= Date.now()) expiryInvalid = 'Ablaufdatum: Das gewählte Datum liegt in der Vergangenheit.';
+      else {
+        setP.DefaultValue = true;
+        dateP.InitialValueExpression = expiryFixedExpr(v);
+        note.textContent = 'Konto läuft ab am ' + fmtDate(new Date(v)) + ', ' + pad2(new Date(v).getHours()) + ':' + pad2(new Date(v).getMinutes()) + ' Uhr';
+      }
+    }
+    err.textContent = expiryInvalid;
+    updatePreview();
+  }
+  daysInp.addEventListener('focus', () => { rows.days.rb.checked = true; mode = 'days'; apply(); });
+  daysInp.addEventListener('input', () => { rows.days.rb.checked = true; mode = 'days'; apply(); });
+  fixedInp.addEventListener('focus', () => { rows.fixed.rb.checked = true; mode = 'fixed'; apply(); });
+  fixedInp.addEventListener('input', () => { rows.fixed.rb.checked = true; mode = 'fixed'; apply(); });
+  if (mode !== 'file') apply();
   return wrap;
 }
 

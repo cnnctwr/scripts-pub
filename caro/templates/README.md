@@ -26,7 +26,12 @@
 
 - jedes Feld hat links einen Haken zum Ein- und Ausschalten, jeder Abschnitt oben ebenfalls
 - **Pflicht:** bei jedem Feld lässt sich festlegen, ob es bei der Nutzeranlage in CARO ausgefüllt werden muss
-    - fest vorgegeben (nicht änderbar): Vorname, Nachname, Kennwort, Änderungskommentar, UserPrincipalName
+    - fest vorgegeben (nicht änderbar): Vorname, Nachname, SamAccountName, UserPrincipalName, Allgemeiner Name, Kennwort, Änderungskommentar
+- **Vorname und Nachname** sind im Template nicht beschreibbar, sie werden erst in CARO eingegeben
+- **Bildungsvorschrift:** SamAccountName, UserPrincipalName, Anzeigename und Allgemeiner Name werden in CARO automatisch aus Vor- und Nachname gebildet. Je Feld lässt sich eine von mehreren festen Vorschriften wählen (die oberste ist der Standard), zum Beispiel `Nachname, Vorname` oder `Vorname.Nachname`
+- **Testmodus** (Knopf im Abschnitt „LDAP - notwendig“): Beispielnamen und Suffix eintippen, die Zeilen zeigen das Ergebnis jeder Vorschrift. Im Testmodus wird nichts gespeichert und das Speichern ist gesperrt
+- **UPN-Suffix:** CARO ermittelt ihn selbst (Domänenname aus den DC-Teilen der OU, z. B. `meine.firma.gmbh`). Ein eigener Wert im Feld ersetzt das
+- **Ablaufdatum des Kontos:** drei Möglichkeiten: **läuft nie ab** (Standard), **nach N Tagen** (ab Anlage gerechnet, am Ablauftag um 23:59 Uhr) oder **festes Datum** mit Uhrzeit. CARO trägt das Datum beim Öffnen der Maske vor, der Nutzer kann es dort noch ändern. Die Uhrzeit gilt in der Ortszeit des Servers (im AD als UTC gespeichert, in CARO bestätigt). Fehleingaben (keine ganze Zahl, Datum in der Vergangenheit) sperren das Speichern
 - **Gruppen:** sAMAccountNames der Gruppen eintragen, CARO löst sie beim Öffnen der Maske auf
 - **Vorgesetzter:** sAMAccountName eintragen, CARO löst ihn beim Öffnen der Maske auf und trägt ihn vor. Leer lassen = Auswahl im CARO-Dialog über die Suche
     - existiert der Name im AD nicht, meldet CARO vermutlich einen Fehler (nicht getestet)
