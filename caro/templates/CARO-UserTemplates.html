@@ -534,6 +534,7 @@ function downloadJSON() {
   if (testMode) { toast('⚠️ Im Testmodus ist Speichern gesperrt – Testmodus beenden', 4000); return; }
   if (expiryInvalid) { toast('⚠️ ' + expiryInvalid, 5000); return; }
   if (mailInvalid) { toast('⚠️ ' + mailInvalid, 5000); return; }
+  if (pwInvalid) { toast('⚠️ ' + pwInvalid, 5000); return; }
 
   const open = openMustChange();
   if (open.length && !confirm(
@@ -776,14 +777,18 @@ function isMarkedRequired(param) {
   if (isRequired(param)) return true;
   if (param.VariableName === 'AccountMail') return (param.MinStringLength || 0) > 0;
   if (param.AutoValueExpression) return false;
-  if (param.DataType === 3) return (param.MinStringLength || 0) > 0;
-  return (param.MinListLength || 0) > 0;
+  if (param.DataType === 3 || param.DataType === 13) return (param.MinStringLength || 0) > 0;   // Textfeld / Textliste: ein Wert muss rein
+  return (param.MinListLength || 0) > 0;   // Gruppen, Vorgesetzter: eine Auswahl muss rein
 }
 
 // Pflicht ein-/ausschalten (Mindestlänge 1 bzw. 0)
-function setRequired(idx, on) {
+function setRequired(idx, on, origListMin) {
   const p = jsonData.ConfigurationParameterDefinitions[idx];
   if (p.DataType === 3) p.MinStringLength = on ? Math.max(1, p.MinStringLength || 0) : 0;
+  else if (p.DataType === 13) {   // Textliste: mindestens ein Eintrag UND dieser nicht leer; beim Abwählen die Original-Listenlänge zurück
+    p.MinStringLength = on ? Math.max(1, p.MinStringLength || 0) : 0;
+    p.MinListLength   = on ? Math.max(1, p.MinListLength   || 0) : (origListMin || 0);
+  }
   else                  p.MinListLength   = on ? Math.max(1, p.MinListLength   || 0) : 0;
   updatePreview();
   document.dispatchEvent(new Event('reqchange'));
@@ -830,6 +835,7 @@ function buildForm() {
   testMode = false;
   attrMap = buildAttrMap();
   expiryInvalid = '';
+  pwInvalid = '';
   mailInvalid = '';
   mailRefresh = null;
   mailTestHook = null;
@@ -1057,13 +1063,14 @@ function buildAccordion(cat, cfg, items) {
       body.appendChild(tb);
     }
     const isGeneral = cat === 'Allgemeines' || cat === 'General';
+    const isEmployee = cat === 'Mitarbeiter' || cat === 'Employee';
     const ordered = isGeneral
       ? [...items].sort((a, b) => { const ia = GENERAL_ORDER.indexOf(a.param.VariableName), ib = GENERAL_ORDER.indexOf(b.param.VariableName); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); })
       : items;
     ordered.forEach(({param, idx}) => {
       const f = buildField(param, idx);
       if (!f) return;
-      if (isGeneral) f.style.gridColumn = '1 / -1';
+      if (isGeneral || isEmployee) f.style.gridColumn = '1 / -1';   // je Feld eine Zeile
       const pair = param.Id === 'cts.mandatoryLdapParameter.AccountGivenname' ||
                    param.Id === 'cts.mandatoryLdapParameter.AccountSurname';
       if (isLdapMandatory && !pair) f.style.gridColumn = '1 / -1';
@@ -1207,22 +1214,32 @@ function decorateRequired(wrap, param, idx) {
     }
   }
   apply(cb.checked);
-  cb.addEventListener('change', () => { setRequired(idx, cb.checked); apply(cb.checked); });
+  const origListMin = param.MinListLength;   // Original-Mindestlänge der Liste (z. B. Informationen: 1) fürs Abwählen merken
+  cb.addEventListener('change', () => { setRequired(idx, cb.checked, origListMin); apply(cb.checked); });
   return wrap;
+}
+
+// Steht der AD-Attributname schon in Klammern im Feldnamen („Ort (l)“), entfällt er dort; die kleine graue Angabe dahinter bleibt
+function cleanLabel(label, param) {
+  const m = /^(.*?)\s*\(([^)]*)\)$/.exec(label);
+  if (!m) return label;
+  const names = (attrMap[param.VariableName] || []).map(x => x.toLowerCase());
+  return names.includes(m[2].trim().toLowerCase()) ? m[1] : label;
 }
 
 function buildFieldInner(param, idx) {
   const dataType = param.DataType;
   const isSuffix0 = param.VariableName === 'SetAccountExpires';
-  const label    = isSuffix0 ? 'Ablaufdatum des Kontos' : str(param.Label, param.VariableName);
+  const label    = isSuffix0 ? 'Ablaufdatum des Kontos' : cleanLabel(str(param.Label, param.VariableName), param);
   const isSuffix = param.Id === UPN_SUFFIX_ID;
   const isExpiry = param.VariableName === 'SetAccountExpires';
   const showRule = SHOW_RULE.includes(param.VariableName) && !!param.AutoValueExpression;
-  const hint     = isSuffix ? 'FQDN der Domäne (DC-Teile), z. B.: meine.firma.gmbh'
+  const hint0    = isSuffix ? 'FQDN der Domäne (DC-Teile), z. B.: meine.firma.gmbh'
                  : (showRule || PRESET_FIELDS.includes(param.VariableName)) ? 'wird automatisch gebildet'
                  : isNameField(param) ? 'wird in CARO eingegeben'
                  : isExpiry ? 'Aus: Das Konto läuft nie ab. An: In CARO erscheint ein Datumsfeld für das Ablaufdatum.'
                  : str(param.Description, '');
+  const hint     = hint0 === str(param.Label, '') ? '' : hint0;   // Hinweis nur, wenn er mehr sagt als der Feldname (z. B. nicht „Ort (l)“ unter „Ort“)
   const isAuto   = !!param.AutoValueExpression || isSuffix;
   const req      = isRequired(param);
   const active   = isParamActive(param);
@@ -1986,7 +2003,7 @@ function buildGroupMembershipField(param, idx) {
 
   const labelEl = document.createElement('div');
   labelEl.className = 'field-label';
-  labelEl.textContent = str(param.Label, 'Gruppenmitgliedschaften');
+  labelEl.textContent = 'Benutzer den Gruppen hinzufügen';
   labelRow.appendChild(labelEl);
   wrap.appendChild(labelRow);
 
@@ -2082,6 +2099,7 @@ function buildManagerField(param, idx) {
 
   const wrap = document.createElement('div');
   wrap.className = 'field' + (!active ? ' field-disabled' : '');
+  wrap.style.gridColumn = '1 / -1';   // Erklärungstext über die volle Breite
 
   const labelRow = document.createElement('div');
   labelRow.className = 'field-label-row';
@@ -2143,6 +2161,79 @@ function extractManagerFromQuery(queryStr) {
 // ─────────────────────────────────────────────
 // PASSWORD SECTION (special layout)
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// KENNWORT: Zufall (CARO-Standard) oder eigenes Kennwort
+// Neue CARO-Standard-JSON: DefaultValue leer, InitialValueExpression erzeugt beim Öffnen der Maske ein Zufallskennwort.
+// Ein nur in DefaultValue geschriebenes Kennwort würde davon überstimmt; „eigen“ setzt deshalb auch den Startwert.
+// ─────────────────────────────────────────────
+const PW_RANDOM_EXPR = "Array(12).fill(0).map(function(){ var c='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}'; return c.charAt(Math.floor(Math.random()*c.length)); }).join('');";
+let pwInvalid = '';   // Fehlermeldung bei zu kurzem eigenem Kennwort (sperrt das Speichern)
+
+function buildPasswordChoice(param, idx) {
+  const p = jsonData.ConfigurationParameterDefinitions[idx];
+  const ie = p.InitialValueExpression, dv = p.DefaultValue;
+  const lit = /^'((?:[^'\\]|\\.)*)'$/;
+  let mode = 'file', pw = '', randomExpr = PW_RANDOM_EXPR;
+  if (ie && lit.test(ie)) { mode = 'eigen'; pw = lit.exec(ie)[1].replace(/\\(.)/g, '$1'); }
+  else if (ie && !dv)     { mode = 'zufall'; randomExpr = ie; }      // Ausdruck aus der Datei (CARO-Zufall) bleibt unverändert
+  else if (!ie && dv)     { mode = 'eigen'; pw = dv; }               // ältere Fassung: festes Kennwort als Standardwert
+  const minLen = p.MinStringLength || 12;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  wrap.innerHTML = '<div class="field-label-row"><div class="field-label">' + esc(str(param.Label, 'Kennwort')) + ' <span class="badge-required">Pflicht</span></div></div>';
+  const box = document.createElement('div');
+  box.className = 'expiry-box';
+  const mk = (value, html) => {
+    const row = document.createElement('label');
+    row.className = 'exp-row';
+    const rb = document.createElement('input');
+    rb.type = 'radio'; rb.name = 'pw_mode'; rb.value = value; rb.checked = mode === value;
+    row.appendChild(rb);
+    const span = document.createElement('span');
+    span.innerHTML = html;
+    row.appendChild(span);
+    box.appendChild(row);
+    rb.addEventListener('change', () => { if (rb.checked) { mode = value; apply(); } });
+    return { rb, span };
+  };
+  const rZ = mk('zufall', 'Zufall <em>(CARO-Standard: ein neues Kennwort bei jedem Öffnen der Maske)</em>');
+  const zNote = document.createElement('div'); zNote.className = 'exp-note';
+  zNote.textContent = 'CARO erzeugt das Kennwort beim Öffnen der Maske. Vor dem Anlegen kopieren; später ist es nicht mehr einsehbar.';
+  box.appendChild(zNote);
+  const rE = mk('eigen', 'Eigenes Kennwort vergeben: <span class="pw-wrap" style="display:inline-block;width:260px;vertical-align:middle"><input type="password" class="exp-pw" autocomplete="off"><button class="pw-eye" type="button" onclick="togglePw(this)">👁</button></span>');
+  const eNote = document.createElement('div'); eNote.className = 'exp-note';
+  eNote.textContent = 'Achtung: Das Kennwort steht im Klartext in der JSON (auf dem Server und in jeder Kopie der Datei).';
+  box.appendChild(eNote);
+  let rF = null;
+  if (mode === 'file') rF = mk('file', 'Einstellung aus der Datei <em>(unverändert)</em>');
+  const pwInp = rE.span.querySelector('.exp-pw');
+  pwInp.value = pw;
+  const err = document.createElement('div'); err.className = 'exp-error'; box.appendChild(err);
+  wrap.appendChild(box);
+
+  function apply() {
+    pwInvalid = ''; err.textContent = '';
+    if (mode === 'zufall') {
+      p.DefaultValue = '';
+      p.InitialValueExpression = randomExpr;
+    } else if (mode === 'eigen') {
+      const v = pwInp.value;
+      if (v.length < minLen) pwInvalid = 'Kennwort: Bitte mindestens ' + minLen + ' Zeichen eingeben.';
+      else {
+        p.DefaultValue = v;
+        p.InitialValueExpression = "'" + v.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+      }
+    }
+    err.textContent = pwInvalid;
+    updatePreview();
+  }
+  const pickE = () => { rE.rb.checked = true; mode = 'eigen'; apply(); };
+  pwInp.addEventListener('focus', pickE);
+  pwInp.addEventListener('input', pickE);
+  return wrap;
+}
+
 function buildPasswordSection(items) {
   const wrap = document.createElement('div');
   const pwParam   = items.find(({param}) => param.DataType === 102);
@@ -2150,9 +2241,7 @@ function buildPasswordSection(items) {
   const others    = items.filter(({param}) => param.DataType !== 102 && param.DataType !== 0);
 
   if (pwParam) {
-    wrap.appendChild(buildPasswordField(pwParam.param, pwParam.idx,
-      str(pwParam.param.Label, 'Kennwort'),
-      str(pwParam.param.Description, '')));
+    wrap.appendChild(buildPasswordChoice(pwParam.param, pwParam.idx));
     const spacer = document.createElement('div');
     spacer.style.marginTop = '14px';
     wrap.appendChild(spacer);
