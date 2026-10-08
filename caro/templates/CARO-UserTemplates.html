@@ -156,7 +156,7 @@
   .field.field-disabled textarea { background: #f5f5f5 !important; color: #aaa; }
 
   .field-label-row {
-    display: flex; align-items: center; gap: 6px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   }
   .field-toggle {
     width: 15px; height: 15px;
@@ -277,16 +277,29 @@
   .preset-label { width: 205px; flex-shrink: 0; font-size: .76rem; font-weight: 400; color: #5a6678; }
   .preset-row input[type="text"] { flex: 1; min-width: 0; }
 
+  /* ── AD-Attributname hinter der Beschriftung ── */
+  .attr-name { font-family: 'Consolas', 'Courier New', monospace; font-size: .7rem; font-weight: 400; color: #718096; }
+
   /* ── Ablaufdatum ── */
   .expiry-box { display: grid; gap: 8px; margin: 4px 0 0 22px; padding-left: 14px; border-left: 3px solid var(--brand-line); }
   .exp-row { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #2d3748; cursor: pointer; flex-wrap: wrap; }
   .exp-row input[type="radio"] { accent-color: var(--brand); cursor: pointer; flex-shrink: 0; }
+  .exp-row > span { flex: 1 1 0; min-width: 0; }
   .exp-row em { font-style: normal; font-size: .72rem; color: #718096; }
   .exp-row input.exp-days { width: 84px; padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: .85rem; }
   .exp-row input.exp-fixed { padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: .85rem; font-family: inherit; }
+  .mail-sub { margin: 2px 0 2px 24px; padding: 6px 0 6px 12px; border-left: 3px solid var(--brand-line); display: grid; gap: 6px; }
+  .mail-sub-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #718096; margin-top: 4px; }
+  .mail-sub-off { opacity: .45; }
+  .exp-domain-row { padding: 2px 0 2px 0; font-size: .8rem; color: #4a5568; cursor: default; }
+  .exp-domain-row input.exp-domain { padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: .85rem; }
   .exp-note { font-size: .74rem; color: #4a5568; padding-left: 24px; }
   .exp-error { font-size: .76rem; font-weight: 600; color: #c53030; padding-left: 24px; }
   .exp-error:empty, .exp-note:empty { display: none; }
+
+  .mail-test { display: flex; align-items: center; gap: 8px; margin: 4px 0 0 24px; }
+  .mail-test-label { font-size: .76rem; font-weight: 600; color: #744210; white-space: nowrap; }
+  .mail-test input { flex: 1; min-width: 0; }
 
   /* ── Testmodus ── */
   .test-toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; padding: 8px 12px; background: var(--bg); border: 1px dashed var(--brand-line); border-radius: 8px; font-size: .78rem; color: #718096; }
@@ -441,6 +454,16 @@ const SAM_PRESETS = [
   { label: 'V + 7 Buchstaben Nachname',   expr: "AccountGivennameReplace.slice(0,1) + AccountSurnameReplace.slice(0,7)",                       calc: sam((g, s) => g.slice(0, 1) + s.slice(0, 7)), needsHelpers: true },
   { label: 'VornameNachname',             expr: "(AccountGivennameReplace + AccountSurnameReplace).slice(0,20)",                               calc: sam((g, s) => (g + s).slice(0, 20)), needsHelpers: true }
 ];
+// Dieselben fünf Varianten ohne die 20-Zeichen-Kürzung (die Mail nutzt den SamAccountName-Namensteil ungekürzt)
+const SAM_FULL = [
+  (g, s) => g + '.' + s,
+  (g, s) => g.slice(0, 1) + '.' + s,
+  (g, s) => s,
+  (g, s) => g.slice(0, 1) + s.slice(0, 7),
+  (g, s) => g + s
+];
+// Reihenfolge im Abschnitt „Allgemeines“ (nur Darstellung): Mail zuerst, Informationen zuletzt, je Feld eine Zeile
+const GENERAL_ORDER = ['AccountMail', 'AccountDescription', 'AccountPhysicalDeliveryOfficeName', 'AccountTelephoneNumber', 'AccountWWWHomePage', 'AccountInfo'];
 const upn = (f) => (g, s, suffix) => f(stdReplace(g), stdReplace(s)) + '@' + (suffix || '');
 const UPN_PRESETS = [
   { label: 'Vorname.Nachname',            expr: "AccountGivennameReplace + '.' + AccountSurnameReplace + '@' + AccountUPNSuffix",              calc: upn((g, s) => g + '.' + s), needsHelpers: true },
@@ -458,6 +481,7 @@ const AUTO_PLACEHOLDERS = {
 };
 const NAME_FIELD_IDS = { 'cts.mandatoryLdapParameter.AccountGivenname': 'given', 'cts.mandatoryLdapParameter.AccountSurname': 'surname' };
 const isNameField = p => p.Id in NAME_FIELD_IDS;
+const STACKED_VARS = ['AccountDescription', 'AccountPhysicalDeliveryOfficeName', 'AccountTelephoneNumber'];
 const UPN_SUFFIX_ID = 'cts.mandatoryLdapParameter.AccountUPNSuffix';
 // Originalberechnung von CARO: alle DC=-Teile des DN der OU, mit Punkt verbunden (z. B. caro-demo.local)
 const UPN_SUFFIX_DEFAULT_EXPR = "(LdapOuResource?.[0]?.Properties?.find(p => p.Name === 'distinguishedname')?.Values?.[0]?.match(/DC=([^,]+)/g)?.map(dc => dc.replace('DC=', ''))?.join('.')?.toLowerCase()) ?? ''";
@@ -509,6 +533,7 @@ function downloadJSON() {
   if (!jsonData) { toast('⚠️ Bitte zuerst eine Datei laden'); return; }
   if (testMode) { toast('⚠️ Im Testmodus ist Speichern gesperrt – Testmodus beenden', 4000); return; }
   if (expiryInvalid) { toast('⚠️ ' + expiryInvalid, 5000); return; }
+  if (mailInvalid) { toast('⚠️ ' + mailInvalid, 5000); return; }
 
   const open = openMustChange();
   if (open.length && !confirm(
@@ -578,6 +603,7 @@ function testResult(variable) {
 }
 
 function refreshTest() {
+  if (mailTestHook) mailTestHook();
   Object.entries(ldapReg.rules).forEach(([variable, r]) => {
     let text = r.expr, isResult = false;
     if (testMode && (testVals.given !== '' || testVals.surname !== '')) {
@@ -621,6 +647,11 @@ function setTestMode(on) {
       ? 'Testmodus aktiv: Beispielnamen eintippen. Nichts wird gespeichert, Speichern ist gesperrt.'
       : 'Zeigt mit Beispielnamen, was die Bildungsvorschriften ergeben (wird nicht gespeichert).';
   }
+  if (on) document.querySelectorAll('.accordion').forEach(a => {   // Abschnitt „Allgemeines“ aufklappen (dort steht das Mail-Ergebnis)
+    const t = a.querySelector('.acc-title');
+    const h = a.querySelector('.accordion-header');
+    if (t && h && (t.textContent === 'Allgemeines' || t.textContent === 'General') && !h.classList.contains('open')) h.click();
+  });
   const sv = document.getElementById('btnSave');
   if (sv) { sv.disabled = on; sv.title = on ? 'Im Testmodus gesperrt – Testmodus beenden' : ''; }
 }
@@ -743,6 +774,7 @@ function isRequired(param) {
 // Aktueller Pflicht-Stand laut JSON (Mindestlänge > 0)
 function isMarkedRequired(param) {
   if (isRequired(param)) return true;
+  if (param.VariableName === 'AccountMail') return (param.MinStringLength || 0) > 0;
   if (param.AutoValueExpression) return false;
   if (param.DataType === 3) return (param.MinStringLength || 0) > 0;
   return (param.MinListLength || 0) > 0;
@@ -796,7 +828,11 @@ function setParamActive(idx, active) {
 // ─────────────────────────────────────────────
 function buildForm() {
   testMode = false;
+  attrMap = buildAttrMap();
   expiryInvalid = '';
+  mailInvalid = '';
+  mailRefresh = null;
+  mailTestHook = null;
   ldapReg = { rules: {}, presets: {} };
   testVals.given = ''; testVals.surname = ''; testVals.suffix = '';
   const svBtn = document.getElementById('btnSave'); if (svBtn) svBtn.disabled = false;
@@ -1020,12 +1056,18 @@ function buildAccordion(cat, cfg, items) {
       tb.querySelector('button').addEventListener('click', () => setTestMode(!testMode));
       body.appendChild(tb);
     }
-    items.forEach(({param, idx}) => {
+    const isGeneral = cat === 'Allgemeines' || cat === 'General';
+    const ordered = isGeneral
+      ? [...items].sort((a, b) => { const ia = GENERAL_ORDER.indexOf(a.param.VariableName), ib = GENERAL_ORDER.indexOf(b.param.VariableName); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); })
+      : items;
+    ordered.forEach(({param, idx}) => {
       const f = buildField(param, idx);
       if (!f) return;
+      if (isGeneral) f.style.gridColumn = '1 / -1';
       const pair = param.Id === 'cts.mandatoryLdapParameter.AccountGivenname' ||
                    param.Id === 'cts.mandatoryLdapParameter.AccountSurname';
       if (isLdapMandatory && !pair) f.style.gridColumn = '1 / -1';
+      if (STACKED_VARS.includes(param.VariableName)) f.style.gridColumn = '1 / -1';   // je Feld eine eigene Zeile
       grid.appendChild(f);
     });
     body.appendChild(grid);
@@ -1075,8 +1117,57 @@ function buildAccordion(cat, cfg, items) {
 // ─────────────────────────────────────────────
 // FIELD (generic)
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// AD-Attributnamen hinter den Beschriftungen
+// Die Namen stammen aus der Pipeline der geladenen JSON (ResourceCreateProperties); Sonderfälle stehen unten.
+// ─────────────────────────────────────────────
+let attrMap = {};
+const CANONICAL_ATTR = { samaccountname: 'sAMAccountName' };
+function buildAttrMap() {
+  const map = {};
+  const acts = jsonData?.TaskPipelineDefinition?.Tasks?.[0]?.Configuration?.Parameter?.Actions || [];
+  const ap = acts[0]?.ActionParameters?.find(a => a.Name === 'ResourceCreateProperties');
+  (ap ? ap.Value : []).forEach(x => {
+    [...String(JSON.stringify(x.Values)).matchAll(/CreateNewUser\.(\w+)/g)].forEach(m => {
+      (map[m[1]] = map[m[1]] || []);
+      const name = CANONICAL_ATTR[x.Name.toLowerCase()] || x.Name;   // offizielle Schreibweise im AD
+      if (!map[m[1]].includes(name)) map[m[1]].push(name);
+    });
+  });
+  return map;
+}
+// Felder ohne eigenes AD-Attribut: keine Klammer
+const NO_ATTR_NAME = ['AccountUPNSuffix', 'AccountPassword', 'ModificationComment', 'editExtendedAttributes'];
+// Kennwort-Optionen: Klammer mit beiden betroffenen Attributen an der Überschrift „Konto-Optionen“
+const PW_OPTION_VARS = ['AccountUserCannotChangePw', 'AccountUserSmartCard', 'AccountUserShallDisabled', 'AccountPwExpires', 'AccountChangePwNextLogOn'];
+function pwOptionAttrs() {
+  const out = [];
+  PW_OPTION_VARS.forEach(v => (attrMap[v] || []).forEach(a => { if (!out.includes(a)) out.push(a); }));
+  return out;
+}
+function attrNameText(param) {
+  const v = param.VariableName;
+  if (NO_ATTR_NAME.includes(v)) return '';
+  if (v === 'SetAccountExpires') return '(accountExpires)';
+  if (v === 'AccountManager') return '(manager)';   // die Pipeline legt den Vorgesetzten über ManagerDN ab
+  if (v === 'GroupAddMemberAccountObjects') return "(Account wird als Attribut 'member' der Gruppe hinzugefügt)";
+  const a = attrMap[v];
+  return a && a.length ? '(' + a.join(', ') + ')' : '';
+}
+function addAttrName(wrap, param) {
+  if (!wrap) return wrap;
+  const text = attrNameText(param);
+  const lab = wrap.querySelector('.field-label');
+  if (!text || !lab || lab.querySelector('.attr-name')) return wrap;
+  const sp = document.createElement('span');
+  sp.className = 'attr-name';
+  sp.textContent = text;
+  lab.appendChild(sp);
+  return wrap;
+}
+
 function buildField(param, idx) {
-  return decorateRequired(buildFieldInner(param, idx), param, idx);
+  return addAttrName(decorateRequired(buildFieldInner(param, idx), param, idx), param);
 }
 
 // Pflicht-Checkbox in die Beschriftungszeile jedes passenden Felds einsetzen
@@ -1085,7 +1176,7 @@ function decorateRequired(wrap, param, idx) {
   wrap.querySelectorAll('.badge-required').forEach(b => b.remove());
   const locked = isRequired(param);
   const supported = locked ||
-    ([3, 13, 311, 110].includes(param.DataType) && !param.AutoValueExpression);
+    ([3, 13, 311, 110].includes(param.DataType) && !param.AutoValueExpression) || param.VariableName === 'AccountMail';
   const row = wrap.querySelector('.field-label-row');
   if (!supported || !row) return wrap;
 
@@ -1169,6 +1260,9 @@ function buildFieldInner(param, idx) {
   if (dataType === 40) {
     return buildTextareaField(param, idx, label, hint, true /* req */);
   }
+
+  // Mail: Auswahl der Vorbelegung
+  if (param.VariableName === 'AccountMail') return buildMailField(param, idx);
 
   // Ablaufdatum des Kontos: eigene Auswahl (nie / nach N Tagen / festes Datum)
   if (param.VariableName === 'SetAccountExpires') return buildExpiryField(param, idx);
@@ -1333,6 +1427,7 @@ function buildPresetChoice(param, idx) {
       if (!rb.checked) return;
       jsonData.ConfigurationParameterDefinitions[idx].AutoValueExpression = p.expr;
       updatePreview();
+      document.dispatchEvent(new Event('presetchange'));
     });
     const lab = document.createElement('span');
     lab.className = 'preset-label';
@@ -1535,6 +1630,216 @@ function buildExpiryField(param, idx) {
   fixedInp.addEventListener('focus', () => { rows.fixed.rb.checked = true; mode = 'fixed'; apply(); });
   fixedInp.addEventListener('input', () => { rows.fixed.rb.checked = true; mode = 'fixed'; apply(); });
   if (mode !== 'file') apply();
+  return wrap;
+}
+
+// ─────────────────────────────────────────────
+// MAIL-VORBELEGUNG (Feld Mail, AD-Attribut mail) – zweigeteilt: Namensteil und Domänenteil, unabhängig wählbar
+// Getestet in CARO: gleich UPN (MAIL1), Name + eigene Domäne (MAIL2/MAILB, Verweis auf das SamAccountName-Feld geht),
+// Name + UPN-Suffix (MAILA), nur „@Domäne“ mit Prüfregel (MAIL3).
+// Namensteil offen + UPN-Suffix: nur als Automatik „'@' + AccountUPNSuffix“ mit allgemeiner Prüfregel (MAILD); als Startwert (MAILC)
+// scheitert es, weil der Suffix beim Öffnen der Maske noch nicht vorliegt. In CARO muss der Nutzer die Automatik am Feld vor dem Tippen ausschalten.
+// ─────────────────────────────────────────────
+const MAIL_UPN_ID = 'cts.mandatoryLdapParameter.AccountUserPrincipalName';
+const MAIL_GR_ID  = 'cts.mandatoryLdapParameter.AccountGivennameReplace';
+const MAIL_SR_ID  = 'cts.mandatoryLdapParameter.AccountSurnameReplace';
+const MAIL_SUF_ID = 'cts.mandatoryLdapParameter.AccountUPNSuffix';
+const MAIL_DOMAIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
+const MAIL_GENERIC_RE = "^[\\w.\\-']+@[\\w\\-]+(\\.[\\w\\-]+)+$";   // Name vor dem @, danach irgendeine gültige Domäne
+const mailPattern = d => "^[\\w.\\-']+@" + d.replace(/\./g, '\\.') + '$';
+let mailInvalid = '';   // Fehlermeldung, solange die Domäne fehlt oder ungültig ist (sperrt das Speichern)
+let mailRefresh = null;
+let mailTestHook = null; // zeigt im Testmodus das Mail-Ergebnis (gelbe Zeile) // wird vom Mail-Feld gesetzt; läuft, wenn oben UPN oder SamAccountName umgestellt wird
+document.addEventListener('presetchange', () => { if (mailRefresh) mailRefresh(); });
+
+// Namensformel des UPN (ohne „@ Suffix“) und des SamAccountName (ohne die 20-Zeichen-Kürzung)
+function mailNameExprs() {
+  const P = jsonData.ConfigurationParameterDefinitions;
+  const upnE = (P.find(p => p.VariableName === 'AccountUserPrincipalName') || {}).AutoValueExpression;
+  const samE = (P.find(p => p.VariableName === 'AccountSamAccountName') || {}).AutoValueExpression;
+  let m;
+  const upn = upnE && (m = /^(.*) \+ '@' \+ AccountUPNSuffix$/.exec(upnE)) ? m[1] : null;
+  let sam = null;
+  if (samE) {
+    if ((m = /^\((.*)\)\.slice\(0,20\)$/.exec(samE))) sam = m[1];
+    else if ((m = /^(.*)\.slice\(0,20\)$/.exec(samE))) sam = m[1];
+    else sam = samE;
+  }
+  return { upn, sam };
+}
+
+// Namensteil der Mail aus der gewählten UPN- bzw. SamAccountName-Variante (nur wenn bekannte Vorschriften)
+function mailNameResult(kind, g, s) {
+  if (!helpersOk()) return null;
+  const P = jsonData.ConfigurationParameterDefinitions;
+  if (kind === 'upn') {
+    const e = (P.find(q => q.VariableName === 'AccountUserPrincipalName') || {}).AutoValueExpression;
+    const x = UPN_PRESETS.find(y => y.expr === e);
+    return x ? x.calc(g, s, '').replace(/@$/, '') : null;
+  }
+  const e = (P.find(q => q.VariableName === 'AccountSamAccountName') || {}).AutoValueExpression;
+  const i = SAM_PRESETS.findIndex(y => y.expr === e);
+  return i >= 0 ? SAM_FULL[i](stdReplace(g), stdReplace(s)) : null;
+}
+
+function buildMailField(param, idx) {
+  const p = jsonData.ConfigurationParameterDefinitions[idx];
+  const active = isParamActive(p);
+  const exprs0 = mailNameExprs();
+
+  // Zustand aus der geladenen Vorlage erkennen
+  const ex = p.AutoValueExpression, dv = p.DefaultValue, rx = p.StringValueRegEx;
+  let top = 'file', nameSel = 'upn', domSel = 'suffix', domain = '';
+  let m;
+  if (!ex && !rx && (dv === '' || dv === undefined)) top = 'none';
+  else if (ex === 'AccountUserPrincipalName') { top = 'set'; nameSel = 'upn'; domSel = 'suffix'; }
+  else if (!ex && typeof dv === 'string' && dv.startsWith('@') && rx === mailPattern(dv.slice(1))) { top = 'set'; nameSel = 'open'; domSel = 'own'; domain = dv.slice(1); }
+  else if (ex === "'@' + AccountUPNSuffix" && rx === MAIL_GENERIC_RE) { top = 'set'; nameSel = 'open'; domSel = 'suffix'; }
+  else if (ex && (m = /^(.*) \+ '@' \+ AccountUPNSuffix$/.exec(ex)) && (m[1] === exprs0.upn || m[1] === exprs0.sam)) { top = 'set'; nameSel = m[1] === exprs0.upn ? 'upn' : 'sam'; domSel = 'suffix'; }
+  else if (ex && (m = /^(.*) \+ '@([^']+)'$/.exec(ex)) && (m[1] === exprs0.upn || m[1] === exprs0.sam)) { top = 'set'; nameSel = m[1] === exprs0.upn ? 'upn' : 'sam'; domSel = 'own'; domain = m[2]; }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (!active ? ' field-disabled' : '');
+  wrap.style.gridColumn = '1 / -1';
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'field-label-row';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.className = 'field-toggle'; cb.checked = active; cb.title = 'Feld ein-/ausschalten';
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => { wrap.classList.toggle('field-disabled', !cb.checked); setParamActive(idx, cb.checked); if (mailTestHook) mailTestHook(); });
+  labelRow.appendChild(cb);
+  const lab = document.createElement('div');
+  lab.className = 'field-label';
+  lab.textContent = str(param.Label, 'Mail');
+  labelRow.appendChild(lab);
+  wrap.appendChild(labelRow);
+
+  const box = document.createElement('div');
+  box.className = 'expiry-box';
+  const radio = (group, value, checked, html, parent) => {
+    const row = document.createElement('label');
+    row.className = 'exp-row';
+    const rb = document.createElement('input');
+    rb.type = 'radio'; rb.name = group; rb.value = value; rb.checked = checked;
+    row.appendChild(rb);
+    const span = document.createElement('span');
+    span.innerHTML = html;
+    row.appendChild(span);
+    (parent || box).appendChild(row);
+    return { row, rb, span };
+  };
+  const rNone = radio('mail_top', 'none', top === 'none', 'keine Vorbelegung <em>(Standard, Feld bleibt leer)</em>');
+  const rSet  = radio('mail_top', 'set',  top === 'set',  'Vorbelegung zusammensetzen <em>(Namensteil und Domänenteil unabhängig wählen)</em>');
+  let rFile = null;
+  if (top === 'file') rFile = radio('mail_top', 'file', true, 'Einstellung aus der Datei <em>(unverändert)</em>');
+
+  const sub = document.createElement('div');
+  sub.className = 'mail-sub';
+  sub.innerHTML = '<div class="mail-sub-title">Namensteil (vor dem @)</div>';
+  const rUpn  = radio('mail_name', 'upn',  nameSel === 'upn',  'wie UserPrincipalName <em>(gewählte UPN-Variante)</em>', sub);
+  const rSam  = radio('mail_name', 'sam',  nameSel === 'sam',  'wie SamAccountName <em>(gewählte Variante, ungekürzt)</em>', sub);
+  const rOpen = radio('mail_name', 'open', nameSel === 'open', 'offen <em>(den Namen ergänzt der Nutzer in CARO; ohne Namen lehnt CARO die Eingabe ab)</em>', sub);
+  const t2 = document.createElement('div'); t2.className = 'mail-sub-title'; t2.textContent = 'Domänenteil (hinter dem @)'; sub.appendChild(t2);
+  const rSuf = radio('mail_dom', 'suffix', domSel === 'suffix', 'wie der UPN-Suffix <em>(von CARO ermittelt oder im Feld „Account UPN Suffix“ fest eingetragen)</em>', sub);
+  const rOwn = radio('mail_dom', 'own',    domSel === 'own',    'eigene Domäne: @ <input type="text" class="exp-domain" placeholder="meine.firma.gmbh" size="24">', sub);
+  const domInp = rOwn.span.querySelector('.exp-domain');
+  domInp.value = domain;
+  const note = document.createElement('div'); note.className = 'exp-note'; sub.appendChild(note);
+  box.appendChild(sub);
+  const err = document.createElement('div'); err.className = 'exp-error'; box.appendChild(err);
+  const tLine = document.createElement('div');
+  tLine.className = 'mail-test';
+  tLine.style.display = 'none';
+  tLine.innerHTML = '<span class="mail-test-label">Ergebnis im Testmodus:</span> <input type="text" readonly class="auto-field rule-field">';
+  box.appendChild(tLine);
+  const tInp = tLine.querySelector('input');
+  wrap.appendChild(box);
+
+  mailTestHook = () => {
+    note.style.display = testMode ? 'none' : '';   // im Testmodus zeigt nur die gelbe Zeile das Ergebnis
+    if (!testMode) { tLine.style.display = 'none'; return; }
+    tLine.style.display = '';
+    let txt = '', result = true;
+    if (!isParamActive(p)) txt = 'Feld ausgeblendet (im Builder abgewählt)';
+    else if (top === 'none') txt = 'keine Vorbelegung – das Feld bleibt leer';
+    else if (top === 'file') { txt = 'Einstellung aus der Datei – keine Vorschau'; result = false; }
+    else {
+      const dom = domSel === 'own' ? domInp.value.trim() : (testVals.suffix || '<UPN-Suffix>');
+      if (nameSel === 'open') txt = '@' + dom + '   (den Namen davor ergänzt der Nutzer in CARO)';
+      else if (testVals.given === '' && testVals.surname === '') { txt = p.AutoValueExpression || ''; result = false; }
+      else {
+        const nm = mailNameResult(nameSel, testVals.given, testVals.surname);
+        if (nm === null) { txt = p.AutoValueExpression || ''; result = false; } else txt = nm + '@' + dom;
+      }
+    }
+    tInp.value = txt;
+    tInp.classList.toggle('rule-result', result);
+    tInp.classList.toggle('rule-field', !result);
+  };
+
+  function apply() {
+    mailInvalid = ''; err.textContent = ''; note.textContent = '';
+    const exprs = mailNameExprs();
+    // Verfügbarkeit: Namensformel nur, wenn die gewählte Vorschrift oben erkennbar ist
+    rUpn.rb.disabled = !exprs.upn;  rSam.rb.disabled = !exprs.sam;
+    if (nameSel === 'upn' && !exprs.upn) nameSel = exprs.sam ? 'sam' : 'open';
+    if (nameSel === 'sam' && !exprs.sam) nameSel = exprs.upn ? 'upn' : 'open';
+    rUpn.rb.checked = nameSel === 'upn'; rSam.rb.checked = nameSel === 'sam'; rOpen.rb.checked = nameSel === 'open';
+    rSuf.rb.checked = domSel === 'suffix'; rOwn.rb.checked = domSel === 'own';
+    sub.classList.toggle('mail-sub-off', top !== 'set');
+    sub.querySelectorAll('input').forEach(i => { if (top !== 'set') i.disabled = true; });
+    if (top === 'set') { rUpn.rb.disabled = !exprs.upn; rSam.rb.disabled = !exprs.sam; rOpen.rb.disabled = false; rSuf.rb.disabled = false; rOwn.rb.disabled = false; domInp.disabled = false; }
+
+    if (top === 'file') { updatePreview(); if (mailTestHook) mailTestHook(); return; }
+    const d = domInp.value.trim();
+    if (top === 'none') {
+      delete p.AutoValueExpression; delete p.DependingParameterIds; delete p.StringValueRegEx; p.DefaultValue = '';
+    } else if (domSel === 'own' && !MAIL_DOMAIN_RE.test(d)) {
+      mailInvalid = 'Mail: Bitte eine gültige Domäne eingeben (z. B. meine.firma.gmbh).';
+    } else if (nameSel === 'open' && domSel === 'suffix') {
+      p.AutoValueExpression = "'@' + AccountUPNSuffix"; p.DependingParameterIds = [MAIL_SUF_ID];
+      p.StringValueRegEx = MAIL_GENERIC_RE; p.DefaultValue = '';
+    } else if (nameSel === 'open') {
+      delete p.AutoValueExpression; delete p.DependingParameterIds;
+      p.DefaultValue = '@' + d; p.StringValueRegEx = mailPattern(d);
+    } else if (nameSel === 'upn' && domSel === 'suffix') {
+      p.AutoValueExpression = 'AccountUserPrincipalName'; p.DependingParameterIds = [MAIL_UPN_ID];
+      delete p.StringValueRegEx; p.DefaultValue = '';
+    } else {
+      const name = nameSel === 'upn' ? exprs.upn : exprs.sam;
+      p.AutoValueExpression = domSel === 'suffix' ? name + " + '@' + AccountUPNSuffix" : name + " + '@" + d + "'";
+      p.DependingParameterIds = domSel === 'suffix' ? [MAIL_GR_ID, MAIL_SR_ID, MAIL_SUF_ID] : [MAIL_GR_ID, MAIL_SR_ID];
+      delete p.StringValueRegEx; p.DefaultValue = '';
+    }
+    if (top === 'set' && !mailInvalid) {
+      // Beispiel mit „Max Mustermann“, soweit die gewählte Vorschrift oben bekannt ist
+      const preset = (list, e) => list.find(x => x.expr === e);
+      const P = jsonData.ConfigurationParameterDefinitions;
+      let nm = 'Name';
+      if (nameSel === 'upn') { const x = preset(UPN_PRESETS, P.find(q => q.VariableName === 'AccountUserPrincipalName').AutoValueExpression); if (x) nm = x.calc('Max', 'Mustermann', '').replace(/@$/, ''); }
+      if (nameSel === 'sam') { const x = preset(SAM_PRESETS, P.find(q => q.VariableName === 'AccountSamAccountName').AutoValueExpression); if (x) nm = x.calc('Max', 'Mustermann').toString(); }
+      note.textContent = 'Beispiel: ' + nm + '@' + (domSel === 'own' ? d : '<UPN-Suffix>');
+      if (nameSel === 'open' && domSel === 'suffix') note.textContent = 'Hinweis: In CARO zuerst die Automatik am Feld Mail ausschalten, dann den Namen vor dem @ ergänzen. Bis dahin meldet CARO „Wert entspricht nicht dem Muster“.';
+    }
+    err.textContent = mailInvalid;
+    updatePreview();
+    if (mailTestHook) mailTestHook();
+  }
+  mailRefresh = apply;
+  const setTop = v => { top = v; apply(); };
+  rNone.rb.addEventListener('change', () => { if (rNone.rb.checked) setTop('none'); });
+  rSet.rb.addEventListener('change',  () => { if (rSet.rb.checked)  setTop('set'); });
+  const pickName = v => { rSet.rb.checked = true; top = 'set'; nameSel = v; apply(); };
+  rUpn.rb.addEventListener('change',  () => { if (rUpn.rb.checked)  pickName('upn'); });
+  rSam.rb.addEventListener('change',  () => { if (rSam.rb.checked)  pickName('sam'); });
+  rOpen.rb.addEventListener('change', () => { if (rOpen.rb.checked) pickName('open'); });
+  const pickDom = v => { rSet.rb.checked = true; top = 'set'; domSel = v; apply(); };
+  rSuf.rb.addEventListener('change', () => { if (rSuf.rb.checked) pickDom('suffix'); });
+  rOwn.rb.addEventListener('change', () => { if (rOwn.rb.checked) pickDom('own'); });
+  domInp.addEventListener('focus', () => pickDom('own'));
+  domInp.addEventListener('input', () => pickDom('own'));
+  apply();
   return wrap;
 }
 
@@ -1856,7 +2161,7 @@ function buildPasswordSection(items) {
   if (flagParams.length) {
     const lbl = document.createElement('div');
     lbl.className = 'section-label';
-    lbl.textContent = 'Konto-Optionen';
+    lbl.textContent = 'Konto-Optionen' + (pwOptionAttrs().length ? ' (' + pwOptionAttrs().join(', ') + ')' : '');
     wrap.appendChild(lbl);
 
     const grid = document.createElement('div');
