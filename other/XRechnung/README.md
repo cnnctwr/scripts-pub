@@ -1,6 +1,6 @@
 # XRechnung-XML / XRechnung-PDF
 
-`XRechnung-PDF.html` per Doppelklick im Browser öffnen, XML hineinziehen (mehrere Dateien möglich). Alles läuft lokal, es wird nichts hochgeladen.
+`XRechnung-PDF.html` herunterladen und per Doppelklick im Browser öffnen, XML hineinziehen (mehrere Dateien möglich). Alles läuft lokal, es wird nichts hochgeladen.
 
 - **Prüfung:** Fehler / Warnungen / Hinweise mit Regel-Nr. (EN 16931, XRechnung BR-DE, Peppol) und BT-Nummer.
 - **Rechnung:** Verkäufer, Käufer, Positionen, Steuer, Summen, Zahlung. Zum Abgleich mit dem PDF.
@@ -17,4 +17,4 @@ PDF-Prüfung: XML-Anhang vorhanden, Dateiname, Beziehung (AFRelationship), Medie
 
 Grenzen: Teilprüfung, ersetzt nicht den KoSIT-Validator (kein Schema, nicht alle Regeln). Die vollständige PDF/A-3-Konformität (Schriften, Farbprofile) wird nicht geprüft (dafür veraPDF). Die PDF-Funktion wurde bisher nur mit selbst erzeugten Test-PDFs geprüft, nicht mit PDFs echter Rechnungsprogramme.
 
-`examples/`: anonymisierte Beispiele (CII, Factur-X Extended).
+
