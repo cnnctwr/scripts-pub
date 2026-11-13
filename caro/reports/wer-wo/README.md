@@ -14,7 +14,7 @@ Die Nutzung erfolgt auf eigenes Risiko. Prüfung des Quellcodes und Validierung 
 
 ## Benutzung
 
-1. `CARO-Berechtigungen.html` im Browser öffnen (Chrome oder Edge).
+1. `CARO-Berechtigungen.html` herunterladen und lokal im Browser öffnen (empfohlen: Chrome, Edge).
 2. Die PDF-Datei des Reports hineinziehen.
 3. Im Ordnerbaum das Verzeichnis anhaken, um das es geht.
 4. Einstellungen prüfen, Vorschau ansehen, **Excel-Datei speichern**.
