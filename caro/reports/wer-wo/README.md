@@ -1,8 +1,16 @@
 # CARO Berechtigungen → Excel
 
-Wertet einen **Berechtigungs-Report der CARO Suite (PDF)** aus und erzeugt daraus eine Excel-Datei, in der je Verzeichnis die **einzelnen berechtigten Benutzer** stehen – statt des Umwegs über die Gruppen.
+## Zweck und Nutzung
+
+Wertet den Report **„Wer hat wo Zugriff“ der CARO Suite (PDF)** aus und erzeugt daraus eine Excel-Datei, in der je Verzeichnis die **einzelnen berechtigten Benutzer** stehen – statt des Umwegs über die Gruppen. Das Werkzeug ist ausschließlich für diesen Reporttyp bestimmt; die übrigen Reporte der CARO Suite sind anders aufgebaut und dürfen hiermit nicht ausgewertet werden.
 
 Die fertige Oberfläche ist eine einzige Datei: **`CARO-Berechtigungen.html`**. Doppelklick genügt, kein Server, keine Installation. Die Datei arbeitet vollständig im Browser; der Report verlässt den Rechner nicht.
+
+## Haftungsausschluss
+
+Dieses Werkzeug ist in freiwilliger Zusatzarbeit entstanden und nicht Bestandteil eines Produkts oder einer vertraglichen Leistung. Die Bereitstellung erfolgt ohne Support, ohne Pflegezusage und ohne jede Gewährleistung, insbesondere ohne Zusicherung von Richtigkeit, Vollständigkeit oder Eignung für einen bestimmten Zweck.
+
+Die Nutzung erfolgt auf eigenes Risiko. Prüfung des Quellcodes und Validierung der Auswertungsergebnisse gegen den zugrunde liegenden Originalreport obliegen dem Anwender – zwingend, bevor aus den Ergebnissen Aussagen abgeleitet oder Änderungen an Berechtigungen vorgenommen werden. Eine Haftung für Schäden aus der Nutzung ist ausgeschlossen.
 
 ## Benutzung
 
@@ -66,28 +74,27 @@ Das Werkzeug kann nur auswerten, was im Report steht. Diese drei Fälle werden e
 - **Nicht aufgelöste Konten.** Steht im Report nur eine SID, kennt auch die Excel-Datei nur die SID (Kontoart „nicht aufgelöst“).
 - **Verschachtelte Gruppen ohne eigene Mitgliederliste.** CARO löst im Anhang nur die Gruppen auf, die in den Zugriffsrechten vorkommen. Ist eine davon selbst Mitglied einer weiteren Gruppe, die der Report nicht aufführt, erscheint eine Zeile „Untergruppe ohne Mitglieder im Report: …“.
 
-## Aufbau und Weiterentwicklung
+## Wie der Report gelesen wird
 
-```
-CARO-Berechtigungen.html   fertige Oberfläche (gebaut, nicht direkt bearbeiten)
-src/parser.js              Report lesen, Gruppen in Benutzer auflösen
-src/excel.js               Aufbau der Arbeitsmappe
-src/app.js                 Oberfläche
-src/tool.template.html     Gerüst und Gestaltung
-vendor/                    pdf.js 3.11.174, ExcelJS 4.4.0 (eingebettet, kein Internet nötig)
-tools/build.cjs            baut alles zu einer Datei zusammen
-tools/test.cjs             prüft Parser und Excel-Aufbau gegen einen echten Report
-tools/browsertest.cjs      öffnet die gebaute Datei in Chrome und exportiert wirklich
-```
+CARO kodiert die Metainformationen jeder Zeile als Zeichen einer Symbolschrift, die bei der Textextraktion erhalten bleiben. Daraus ergibt sich pro Zeile die Kontoart (Benutzer, Gruppe, lokales Konto, nicht aufgelöst) und ob ein Recht am Ordner **direkt** vergeben oder **vererbt** ist. Die Zuordnung dieser Zeichen wird aus der **Legende auf der letzten Seite** des Reports gelesen und ist nicht fest eingebaut. Nicht erkannte Zeilen werden gezählt und in der Oberfläche gemeldet, nie stillschweigend verworfen.
 
-Nach Änderungen in `src/`:
+## Enthaltene Fremdkomponenten
 
-```sh
-node tools/build.cjs
-node tools/test.cjs <report.pdf>
-node tools/browsertest.cjs <report.pdf>
-```
+Beide Bibliotheken sind in `CARO-Berechtigungen.html` eingebettet, damit die Datei ohne Internetverbindung arbeitet.
 
-### Wie der Report gelesen wird
+| Komponente | Version | Zweck | Lizenz |
+|---|---|---|---|
+| [pdf.js](https://mozilla.github.io/pdf.js/), Mozilla Foundation | 3.11.174 | PDF lesen | Apache 2.0 |
+| [ExcelJS](https://github.com/exceljs/exceljs) | 4.4.0 | XLSX schreiben | MIT |
 
-CARO kodiert die Metainformationen jeder Zeile als Zeichen einer Symbolschrift, die bei der Textextraktion erhalten bleiben. Daraus ergibt sich pro Zeile die Kontoart (Benutzer, Gruppe, lokales Konto, nicht aufgelöst) und ob ein Recht am Ordner **direkt** vergeben oder **vererbt** ist. Die Zuordnung dieser Zeichen liest der Parser aus der **Legende auf der letzten Seite** des Reports – ändert CARO die Symbolschrift, bleibt die Auswertung dadurch gültig. Nicht erkannte Zeilen werden gezählt und gemeldet, nie verworfen.
+Die vollständigen Lizenztexte stehen in [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md).
+
+## Quellcode und Bauvorgang
+
+Veröffentlicht wird die fertige Datei `CARO-Berechtigungen.html`. Quelldateien, Build- und Testskripte sind nicht Teil dieser Veröffentlichung.
+
+## Lizenz
+
+MIT-Lizenz, Copyright © 2026 Connectware Distributions GmbH – siehe [`LICENSE`](LICENSE). Nutzung, Änderung und Weitergabe sind frei, solange der Copyright- und Lizenzhinweis erhalten bleibt.
+
+Die Lizenz gilt für den eigenen Code dieses Werkzeugs. Für die eingebetteten Bibliotheken gelten die Bedingungen in [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md).
