@@ -1,6 +1,6 @@
-# im Default ist der Session Timeout in der CARO Web Oberfläche auf 60 Minuten gesetz (50 Minuten werden angezeigt). Mit diesem Skript kann ein individueller Wert festgelegt werden.
+# im Default ist der Session Time out in der Karo Web oberfläche auf 60 Minuten gesetzt. 50 Minuten werden angezeigt. Mit diesem Skript kann ein individueller Wert festgelegt werden.
 
-# Aufruf-Beispiel für 12 Stunden 
+# Aufruf, Beispiel für 12 Stunden 
 # .\Set-CARO-GUI-SessionTimeout.ps1 -Minutes 720
 
 param(
@@ -71,3 +71,24 @@ Write-Host ""
 Write-Host "CARO GUI Session Timeout erfolgreich gesetzt." -ForegroundColor Green
 Write-Host "Pfad    : $configPath"
 Write-Host "Timeout : $Minutes Minuten"
+
+Write-Host ""
+$restart = Read-Host "Soll der Dienst 'CARO-Suite Server' jetzt neu gestartet werden? (J/N)"
+
+if ($restart -match '^[JjYy]$') {
+    try {
+        Restart-Service -Name 'CARO-Suite Server' -ErrorAction Stop
+
+        Write-Host ""
+        Write-Host "Dienst 'CARO-Suite Server' wurde erfolgreich neu gestartet." -ForegroundColor Green
+    }
+    catch {
+        Write-Error "Der Dienst konnte nicht neu gestartet werden: $($_.Exception.Message)"
+        exit 1
+    }
+}
+else {
+    Write-Host ""
+    Write-Host "Kein Dienstneustart durchgeführt." -ForegroundColor Yellow
+    Write-Host "Die Änderung wird erst nach einem Neustart des Dienstes 'CARO-Suite Server' wirksam."
+}
