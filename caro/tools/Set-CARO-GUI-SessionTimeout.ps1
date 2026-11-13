@@ -1,4 +1,6 @@
-# im Default ist der Session Time out in der Karo Web oberfläche auf 60 Minuten gesetzt. 50 Minuten werden angezeigt. Mit diesem Skript kann ein individueller Wert festgelegt werden.
+# im Default ist der Session Time out in der CARO Weboberfläche auf 60 Minuten gesetzt (50 werden angezeigt). Mit diesem Skript kann ein individueller Wert festgelegt werden.
+# Der Inhalt einer bestehenden Datei wird respektiert.
+# Am Ende kann der CARO-Service neu gestartet werden (notwendig für die tatsächliche Änderung)
 
 # Aufruf, Beispiel für 12 Stunden 
 # .\Set-CARO-GUI-SessionTimeout.ps1 -Minutes 720
