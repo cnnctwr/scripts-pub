@@ -4,7 +4,7 @@
     Mail.Send-App - richtet in Entra ID eine App-Registrierung ein, die nur E-Mails senden kann (SMTP mit OAuth 2).
 
 .DESCRIPTION
-    Menü: 1 Anlegen, 2 Testmail, 3 Secret erneuern. Vor jeder Änderung zeigt das Skript eine Übersicht und fragt nach.
+    Menü: 1 Anlegen, 2 Testmail, 3 Secret erneuern, 4 Prüfen. Vor jeder Änderung zeigt das Skript eine Übersicht und fragt nach.
     Das Client-Secret erscheint nur auf dem Bildschirm und wird nicht gespeichert.
     Details: README.md
 
@@ -25,14 +25,22 @@ $script:RoleName     = 'SMTP.SendAsApp'
 $script:AppTag       = 'MailSendAppSkript'                      # daran erkennt "Secret erneuern" die Apps
 $script:GraphScopes  = @('Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All', 'Policy.Read.All')
 $script:Connected    = $false
+$script:CancelMark   = 'MAILSENDAPP-ABBRUCH'
 
 #region Eingaben ---------------------------------------------------------------
 
+function Test-Cancel {
+    # "x" bricht ab; die Meldung wird im Hauptmenü abgefangen
+    param([string]$Text)
+    if ($Text -eq 'x') { throw $script:CancelMark }
+}
+
 function Read-YesNo {
-    param([string]$Question, [bool]$Default = $false)
+    param([string]$Question, [bool]$Default = $false, [switch]$NoCancel)
     $hint = if ($Default) { '(J/n)' } else { '(j/N)' }
     while ($true) {
         $answer = "$(Read-Host "$Question $hint")".Trim().ToLowerInvariant()
+        if (-not $NoCancel) { Test-Cancel $answer }
         if ($answer -eq '') { return $Default }
         if ($answer -in 'j', 'ja') { return $true }
         if ($answer -in 'n', 'nein') { return $false }
@@ -41,9 +49,10 @@ function Read-YesNo {
 }
 
 function Read-Number {
-    param([string]$Question, [int]$Min, [int]$Max, [int]$Default = -1)
+    param([string]$Question, [int]$Min, [int]$Max, [int]$Default = -1, [switch]$NoCancel)
     while ($true) {
-        $text = "$(Read-Host $Question)".Trim()
+        $text = "$(Read-Host $(if ($NoCancel) { $Question } else { "$Question (x = abbrechen)" }))".Trim()
+        if (-not $NoCancel) { Test-Cancel $text }
         if ($text -eq '' -and $Default -ge 0) { return $Default }
         $number = 0
         if ([int]::TryParse($text, [ref]$number) -and $number -ge $Min -and $number -le $Max) { return $number }
@@ -61,7 +70,8 @@ function Read-Address {
     param([string]$Question, [string]$Default)
     $label = if ($Default) { "$Question [$Default]" } else { $Question }
     while ($true) {
-        $text = "$(Read-Host $label)".Trim()
+        $text = "$(Read-Host "$label (x = abbrechen)")".Trim()
+        Test-Cancel $text
         if ($text -eq '' -and $Default) { return $Default }
         if (Test-Address $text) { return $text }
         Write-Host 'Das ist keine gültige E-Mail-Adresse.' -ForegroundColor Yellow
@@ -71,7 +81,8 @@ function Read-Address {
 function Read-Guid {
     param([string]$Question)
     while ($true) {
-        $text = "$(Read-Host $Question)".Trim()
+        $text = "$(Read-Host "$Question (x = abbrechen)")".Trim()
+        Test-Cancel $text
         $guid = [guid]::Empty
         if ([guid]::TryParse($text, [ref]$guid)) { return $guid.ToString() }
         Write-Host 'Das ist keine gültige ID.' -ForegroundColor Yellow
@@ -237,7 +248,8 @@ function Select-Mailbox {
             } | Format-Table -AutoSize | Out-Host
             if ($shown.Count -gt 40) { Write-Host "$($shown.Count) Treffer, die ersten 40 werden angezeigt. Suchtext eingeben, um einzugrenzen." }
         }
-        $text = "$(Read-Host 'Nummer wählen oder Suchtext eingeben (* = alle)')".Trim()
+        $text = "$(Read-Host 'Nummer wählen oder Suchtext eingeben (* = alle, x = abbrechen)')".Trim()
+        Test-Cancel $text
         if ($text -eq '') { continue }
         if ($text -eq '*') { $shown = $Mailboxes; continue }
         $number = 0
@@ -457,7 +469,8 @@ function Invoke-Create {
     Connect-Services
 
     while ($true) {
-        $name = "$(Read-Host 'Name der App-Registrierung [Mail.Send-App]')".Trim()
+        $name = "$(Read-Host 'Name der App-Registrierung [Mail.Send-App] (x = abbrechen)')".Trim()
+        Test-Cancel $name
         if (-not $name) { $name = 'Mail.Send-App' }
         $filter = [uri]::EscapeDataString("displayName eq '$($name.Replace("'", "''"))'")
         $found = @((Invoke-Graph -Path "applications?`$filter=$filter&`$select=id").value)
@@ -476,8 +489,8 @@ function Invoke-Create {
     $duration = Read-SecretDuration
 
     $casBefore = (Get-CASMailbox -Identity $mailbox.Address).SmtpClientAuthenticationDisabled
-    $tenantOff = (Get-TransportConfig).SmtpClientAuthenticationDisabled
-    $enableSmtp = (Get-SmtpAuthLabel $casBefore $tenantOff) -like 'aus*'
+    # Immer ausdrücklich am Postfach, damit ein späteres Abschalten im Mandanten den Versand nicht stoppt
+    $enableSmtp = -not ($null -ne $casBefore -and "$casBefore" -ne '' -and -not [bool]$casBefore)
     $securityDefaults = $null
     try { $securityDefaults = (Invoke-Graph -Path 'policies/identitySecurityDefaultsEnforcementPolicy').isEnabled } catch { Write-Verbose $_ }
 
@@ -488,7 +501,7 @@ function Invoke-Create {
     Write-Host '  Exchange   App bekannt machen'
     Write-Host "  Exchange   Vollzugriff der App auf $($mailbox.Address) ($($mailbox.Kind))"
     if ($otherSender) { Write-Host "  Exchange   'Senden als' der App für $($sender.Address) ($($sender.Kind))" }
-    if ($enableSmtp) { Write-Host "  Exchange   SMTP AUTH einschalten für $($mailbox.Address)" }
+    if ($enableSmtp) { Write-Host "  Exchange   SMTP AUTH ausdrücklich einschalten für $($mailbox.Address)" }
     if ($securityDefaults) {
         Write-Host ''
         Write-Host 'Achtung: Im Mandanten sind die Sicherheitsstandards (Security Defaults) aktiv. Laut Microsoft ist SMTP AUTH' -ForegroundColor Yellow
@@ -550,7 +563,7 @@ function Invoke-Create {
         $secret = New-Secret -ObjectId $app.id -Duration $duration
     } catch {
         Write-Host "Fehler: $($_.Exception.Message)" -ForegroundColor Red
-        if ($app -and (Read-YesNo 'Die Einrichtung ist unvollständig. Bereits Angelegtes wieder entfernen?' $true)) {
+        if ($app -and (Read-YesNo 'Die Einrichtung ist unvollständig. Bereits Angelegtes wieder entfernen?' $true -NoCancel)) {
             $undo = @()
             if ($smtpChanged)  { $undo += @{ What = 'SMTP AUTH zurücksetzen'; Do = { Set-CASMailbox -Identity $mailbox.Address -SmtpClientAuthenticationDisabled $casBefore -ErrorAction Stop } } }
             if ($sendAs)       { $undo += @{ What = 'Senden als entfernen'; Do = { Remove-RecipientPermission -Identity $sender.Address -Trustee $exoPrincipal.Identity -AccessRights SendAs -Confirm:$false -ErrorAction Stop } } }
@@ -580,10 +593,11 @@ function Invoke-Test {
     Write-Host 'Sendet eine Testmail mit genau den Werten der Anwendung. Eine Admin-Anmeldung ist nicht nötig.'
     $tenant = Read-Guid 'Mandanten-ID'
     $client = Read-Guid 'Client-ID'
-    $secret = Read-Host 'Client-Secret' -MaskInput
+    $secret = "$(Read-Host 'Client-Secret (x = abbrechen)' -MaskInput)".Trim()
+    Test-Cancel $secret
     $mailbox = Read-Address 'Postfach'
     $sender = Read-Address 'Absender' $mailbox
-    Invoke-TestMailDialog -TenantId $tenant -ClientId $client -Secret $secret.Trim() -Mailbox $mailbox -Sender $sender
+    Invoke-TestMailDialog -TenantId $tenant -ClientId $client -Secret $secret -Mailbox $mailbox -Sender $sender
 }
 
 #endregion
@@ -627,16 +641,29 @@ function Remove-OldSecrets {
     }
 }
 
-function Invoke-Renew {
-    Connect-Services
+function Select-OwnApp {
+    # Nur Apps, die dieses Skript angelegt hat (erkennbar an der Markierung)
     $filter = [uri]::EscapeDataString("tags/any(t:t eq '$($script:AppTag)')")
-    $apps = @((Invoke-Graph -Path "applications?`$filter=$filter&`$select=id,appId,displayName,notes,passwordCredentials&`$top=100").value)
+    $path = "applications?`$filter=$filter&`$select=id,appId,displayName,notes,passwordCredentials&`$top=100"
+    $apps = @()
+    while ($path) {
+        $page = Invoke-Graph -Path $path
+        $apps += @($page.value | Where-Object { $_ })
+        $path = "$($page.'@odata.nextLink')" -replace '^https://graph\.microsoft\.com/v1\.0/', ''
+    }
     if ($apps.Count -eq 0) { Write-Host 'Es gibt keine mit diesem Skript angelegte App.' -ForegroundColor Yellow; return }
     Write-Host ''
+    Write-Host 'Mit diesem Skript angelegte Apps:' -ForegroundColor Cyan
     for ($i = 0; $i -lt $apps.Count; $i++) {
         Write-Host "  $($i + 1)  $($apps[$i].displayName)  ($((ConvertFrom-AppNotes $apps[$i].notes).Mailbox))"
     }
-    $app = $apps[(Read-Number -Question 'Welche App? Nummer' -Min 1 -Max $apps.Count) - 1]
+    $apps[(Read-Number -Question 'Welche App? Nummer' -Min 1 -Max $apps.Count) - 1]
+}
+
+function Invoke-Renew {
+    Connect-Services
+    $app = Select-OwnApp
+    if (-not $app) { return }
     $info = ConvertFrom-AppNotes $app.notes
     $old = @($app.passwordCredentials | Where-Object { $_ })
 
@@ -667,6 +694,169 @@ function Invoke-Renew {
 
 #endregion
 
+#region 4 Prüfen und beheben ----------------------------------------------------
+
+function Invoke-Check {
+    Connect-Services
+    $app = Select-OwnApp
+    if (-not $app) { return }
+    $info = ConvertFrom-AppNotes $app.notes
+    if (-not (Test-Address $info.Mailbox)) { $info.Mailbox = Read-Address 'Postfach' }
+    if (-not (Test-Address $info.Sender)) { $info.Sender = Read-Address 'Absender' $info.Mailbox }
+    # Nach jeder Behebung erneut prüfen, bis nichts mehr behoben wird
+    while (Invoke-CheckRound -App $app -Info $info) { Start-Sleep -Seconds 5 }
+}
+
+function Invoke-CheckRound {
+    # Prüft einmal und bietet Behebungen an. Rückgabe: wurde etwas behoben?
+    param($App, $Info)
+    Write-Host ''
+    Write-Host "Prüfung '$($app.displayName)', Client-ID $($app.appId) (Änderungen nur nach Rückfrage)" -ForegroundColor Cyan
+    $script:CheckProblems = @()
+    $report = {
+        param([string]$What, [string]$State, [string]$Detail)
+        $color = switch ($State) { 'OK' { 'Green' } 'FEHLT' { 'Red' } default { 'Yellow' } }
+        Write-Host ("  {0,-8} {1,-26} {2}" -f $State, $What, $Detail) -ForegroundColor $color
+        if ($State -ne 'OK') { $script:CheckProblems += $What }
+    }
+    # Ein Fehler beim Lesen heißt UNKLAR und nicht FEHLT
+    $check = {
+        param([string]$What, [scriptblock]$Test)
+        try { & $Test } catch { & $report $What 'UNKLAR' $_.Exception.Message }
+    }
+    $state = @{ Fixes = @() }
+    $offer = { param([string]$What, [scriptblock]$Do) $state.Fixes += @(@{ What = $What; Do = $Do }) }
+
+    & $check 'Secret' {
+        $valid = @($app.passwordCredentials | Where-Object { $_ -and ([datetime]$_.endDateTime).ToUniversalTime() -gt [datetime]::UtcNow } |
+            Sort-Object { ([datetime]$_.endDateTime).ToUniversalTime() })
+        if ($valid.Count) {
+            $last = ([datetime]$valid[-1].endDateTime).ToLocalTime().ToString('dd.MM.yyyy HH:mm')
+            & $report 'Secret' 'OK' "$($valid.Count) gültig, letztes bis $last"
+        } else { & $report 'Secret' 'FEHLT' 'kein gültiges Secret' }
+    }
+    & $check 'Unternehmensanwendung' {
+        $filter = [uri]::EscapeDataString("appId eq '$($app.appId)'")
+        $state.Principal = @((Invoke-Graph -Path "servicePrincipals?`$filter=$filter&`$select=id,accountEnabled").value)[0]
+        if (-not $state.Principal) {
+            & $report 'Unternehmensanwendung' 'FEHLT' 'in Entra ID nicht gefunden'
+            & $offer 'Unternehmensanwendung anlegen' { Invoke-Graph -Method POST -Path 'servicePrincipals' -Body @{ appId = $App.appId } }
+        }
+        elseif (-not $state.Principal.accountEnabled) { & $report 'Unternehmensanwendung' 'FEHLT' 'Anmeldung deaktiviert' }
+        else { & $report 'Unternehmensanwendung' 'OK' "Objekt-ID $($state.Principal.id)" }
+    }
+    if ($state.Principal) {
+        & $check 'Administratorzustimmung' {
+            $exchange = Invoke-Graph -Path "servicePrincipals(appId='$($script:ExchangeApp)')?`$select=id,appRoles"
+            $roleId = "$(($exchange.appRoles | Where-Object { $_.value -eq $script:RoleName } | Select-Object -First 1).id)"
+            $granted = @((Invoke-Graph -Path "servicePrincipals/$($state.Principal.id)/appRoleAssignments").value |
+                Where-Object { $roleId -and "$($_.appRoleId)" -eq $roleId })
+            if ($granted.Count) { & $report 'Administratorzustimmung' 'OK' $script:RoleName }
+            else {
+                & $report 'Administratorzustimmung' 'FEHLT' "$($script:RoleName) nicht erteilt"
+                if ($roleId) {
+                    $state.RoleId = $roleId; $state.ExchangeId = $exchange.id
+                    & $offer "Administratorzustimmung für $($script:RoleName) erteilen" {
+                        Invoke-Graph -Method POST -Path "servicePrincipals/$($state.Principal.id)/appRoleAssignments" -Body @{
+                            principalId = $state.Principal.id; resourceId = $state.ExchangeId; appRoleId = $state.RoleId
+                        }
+                    }
+                }
+            }
+        }
+    }
+    & $check 'App in Exchange' {
+        $state.Exo = @(Get-ServicePrincipal -ErrorAction Stop | Where-Object { "$($_.AppId)" -eq "$($app.appId)" })[0]
+        if (-not $state.Exo) {
+            & $report 'App in Exchange' 'FEHLT' 'nicht bekannt gemacht'
+            if ($state.Principal) {
+                & $offer 'App in Exchange bekannt machen' {
+                    New-ServicePrincipal -AppId $App.appId -ObjectId $state.Principal.id -DisplayName $App.displayName -ErrorAction Stop
+                }
+            }
+        }
+        elseif (-not $state.Principal) { & $report 'App in Exchange' 'UNKLAR' 'Objekt-ID nicht vergleichbar'; $state.Exo = $null }
+        elseif ("$($state.Exo.ObjectId)" -ne "$($state.Principal.id)") { & $report 'App in Exchange' 'FEHLT' "falsche Objekt-ID $($state.Exo.ObjectId)"; $state.Exo = $null }
+        else { & $report 'App in Exchange' 'OK' 'Objekt-ID stimmt überein' }
+    }
+    & $check 'Postfach' {
+        $found = Get-EXOMailbox -Identity $info.Mailbox -ErrorAction Stop
+        & $report 'Postfach' 'OK' "$($info.Mailbox), $(Get-KindLabel $found.RecipientTypeDetails)"
+    }
+    # Rechte nur prüfen und setzen, wenn der Exchange-Eintrag eindeutig zur App gehört
+    if ($state.Exo) {
+        & $check 'Vollzugriff' {
+            $rights = @(Get-MailboxPermission -Identity $info.Mailbox -User $state.Exo.Identity -ErrorAction Stop |
+                Where-Object { "$($_.AccessRights)" -match 'FullAccess' })
+            if (@($rights | Where-Object { [bool]$_.Deny }).Count) { & $report 'Vollzugriff' 'FEHLT' 'ausdrücklich verweigert' }
+            elseif ($rights.Count) { & $report 'Vollzugriff' 'OK' 'gesetzt' }
+            else {
+                & $report 'Vollzugriff' 'FEHLT' 'nicht gesetzt'
+                & $offer "Vollzugriff der App auf $($Info.Mailbox) setzen" {
+                    Add-MailboxPermission -Identity $Info.Mailbox -User $state.Exo.Identity -AccessRights FullAccess -Confirm:$false -ErrorAction Stop
+                }
+            }
+        }
+        if ($info.Sender -ne $info.Mailbox) {
+            & $check 'Senden als' {
+                $rights = @(Get-RecipientPermission -Identity $info.Sender -Trustee $state.Exo.Identity -ErrorAction Stop |
+                    Where-Object { "$($_.AccessRights)" -match 'SendAs' })
+                if (@($rights | Where-Object { "$($_.AccessControlType)" -eq 'Deny' }).Count) { & $report 'Senden als' 'FEHLT' 'ausdrücklich verweigert' }
+                elseif ($rights.Count) { & $report 'Senden als' 'OK' $info.Sender }
+                else {
+                    & $report 'Senden als' 'FEHLT' "nicht gesetzt für $($info.Sender)"
+                    & $offer "'Senden als' der App für $($Info.Sender) setzen" {
+                        Add-RecipientPermission -Identity $Info.Sender -Trustee $state.Exo.Identity -AccessRights SendAs -Confirm:$false -ErrorAction Stop
+                    }
+                }
+            }
+        }
+    }
+    & $check 'SMTP AUTH' {
+        $own = (Get-CASMailbox -Identity $info.Mailbox -ErrorAction Stop).SmtpClientAuthenticationDisabled
+        $tenant = (Get-TransportConfig -ErrorAction Stop).SmtpClientAuthenticationDisabled
+        $label = Get-SmtpAuthLabel $own $tenant
+        if ($label -eq 'an') { & $report 'SMTP AUTH' 'OK' 'an' }
+        elseif ($label -like 'an*') { & $report 'SMTP AUTH' 'HINWEIS' 'an, aber nur durch die Vorgabe des Mandanten' }
+        else { & $report 'SMTP AUTH' 'FEHLT' $label }
+        if ($label -ne 'an') {
+            & $offer "SMTP AUTH ausdrücklich einschalten für $($Info.Mailbox)" {
+                Set-CASMailbox -Identity $Info.Mailbox -SmtpClientAuthenticationDisabled $false -ErrorAction Stop
+            }
+        }
+    }
+    & $check 'Security Defaults' {
+        $on = (Invoke-Graph -Path 'policies/identitySecurityDefaultsEnforcementPolicy').isEnabled
+        if ($on) { & $report 'Security Defaults' 'HINWEIS' 'aktiv, kann SMTP AUTH verhindern' }
+        else { & $report 'Security Defaults' 'OK' 'aus' }
+    }
+
+    Write-Host ''
+    if ($script:CheckProblems.Count -eq 0) {
+        Write-Host 'Fazit: alles gesetzt. Scheitert der Versand trotzdem, sind die Rechte eventuell noch nicht wirksam (warten).' -ForegroundColor Green
+    } else {
+        Write-Host "Fazit: ansehen: $($script:CheckProblems -join ', ')" -ForegroundColor Yellow
+    }
+    if ('Secret' -in $script:CheckProblems) { Write-Host 'Secret: neues über Menüpunkt 3 ausstellen.' }
+
+    $changed = $false
+    # Einzeln fragen; nur eindeutig Fehlendes steht in der Liste
+    foreach ($fix in $state.Fixes) {
+        if (-not (Read-YesNo "Beheben: $($fix.What)?")) { continue }
+        try {
+            $null = & $fix.Do
+            $changed = $true
+            Write-Host '   erledigt' -ForegroundColor Green
+        } catch {
+            Write-Host "   nicht möglich: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    if ($changed) { Write-Host 'Erneute Prüfung. Änderungen werden teils erst verzögert angezeigt und wirksam.' }
+    return $changed
+}
+
+#endregion
+
 function Start-Menu {
     Write-Host ''
     Write-Host 'Mail.Send-App - App-Registrierung nur zum Senden von E-Mails' -ForegroundColor Cyan
@@ -677,16 +867,23 @@ function Start-Menu {
             Write-Host '  1  Anlegen          App einrichten und Zugangsdaten anzeigen'
             Write-Host '  2  Testmail         vorhandene Zugangsdaten prüfen'
             Write-Host '  3  Secret erneuern  neues Secret ausstellen, alte löschen'
+            Write-Host '  4  Prüfen           Rechte und Einstellungen einer App prüfen, Fehlendes nach Rückfrage beheben'
             Write-Host '  0  Beenden'
-            $choice = Read-Number -Question 'Auswahl' -Min 0 -Max 3
+            Write-Host 'In allen Punkten: x eingeben = abbrechen und zurück hierher.' -ForegroundColor DarkGray
+            $choice = Read-Number -Question 'Auswahl' -Min 0 -Max 4 -NoCancel
             try {
                 switch ($choice) {
                     0 { return }
                     1 { Invoke-Create }
                     2 { Invoke-Test }
                     3 { Invoke-Renew }
+                    4 { Invoke-Check }
                 }
             } catch {
+                if ($_.Exception.Message -eq $script:CancelMark) {
+                    Write-Host 'Abgebrochen, zurück zum Hauptmenü.' -ForegroundColor Yellow
+                    continue
+                }
                 Write-Host "Fehler: $($_.Exception.Message)" -ForegroundColor Red
                 if (-not $script:Connected) { Disconnect-Services }
             }
