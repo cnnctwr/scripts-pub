@@ -10,7 +10,7 @@ Nicht gedacht zum Lesen von Postfächern, für Microsoft Graph, für lokales Exc
 
 Das Skript ist eine freiwillige Zusatzarbeit und kein Produktbestandteil. Es wird ohne Support, Pflege und Gewährleistung bereitgestellt. Die Nutzung erfolgt auf eigenes Risiko. Die Prüfung von Code und Ergebnissen obliegt dem Anwender.
 
-**Teststatus:** Anlegen und SMTP-Anmeldung liefen in einem echten Mandanten. Der Versand der Testmail ist noch nicht bestätigt, das Abbrechen und der Menüpunkt Prüfen sind noch ungetestet. Zuerst mit einem 3-Tage-Secret testen.
+**Teststatus:** In einem echten Mandanten liefen Anlegen, Prüfen mit Einschalten von SMTP AUTH, die Testmail über ein freigegebenes Postfach ohne Lizenz und der Versand eines Alarms aus einer Drittanwendung. Noch nicht bestätigt: Secret erneuern, die übrigen Behebungen, abweichender Absender, Kalenderdatei. Zuerst mit einem 3-Tage-Secret testen.
 
 ## Voraussetzungen
 
@@ -61,7 +61,7 @@ Das Secret wird einmal angezeigt und nicht gespeichert. Kein PowerShell-Transkri
 | Meldung | Mögliche Ursache |
 |---|---|
 | `AADSTS7000215` / `AADSTS7000222` | Secret falsch / abgelaufen |
-| `430 4.2.0 … MapiExceptionLogonFailed` | Vollzugriff fehlt oder ist noch nicht wirksam (Vermutung): Menü 4, sonst warten |
+| `430 4.2.0 … MapiExceptionLogonFailed` | Die App darf das Postfach nicht öffnen. Menü 4; ist dort alles gesetzt, warten und wiederholen. Beim Test verschwand der Fehler bei gesetztem Vollzugriff nach einiger Zeit, kurz nachdem SMTP AUTH ausdrücklich eingeschaltet wurde. Die Ursache ist nicht geklärt, vermutlich die Wartezeit |
 | `535 5.7.3` | Rechte noch nicht wirksam (warten), Postfach falsch |
 | `5.7.139` | SMTP AUTH aus, Security Defaults oder Authentifizierungsrichtlinie |
 | `5.7.60 SendAsDenied` | Bei abweichendem Absender: Menü 4. Ist der Absender das Postfach selbst: `Add-RecipientPermission -Identity <Absender> -Trustee <Objekt-ID der Unternehmensanwendung> -AccessRights SendAs` |
@@ -69,7 +69,7 @@ Das Secret wird einmal angezeigt und nicht gespeichert. Kein PowerShell-Transkri
 
 ## Grenzen
 
-- Ein Postfach pro App. Dass freigegebene Postfächer ohne Lizenz senden können, ist angenommen und muss der Test zeigen.
+- Ein Postfach pro App. Freigegebene Postfächer ohne Lizenz können senden (Testmail und Drittanwendung, ein Mandant).
 - Nach Ablauf des Secrets wird nicht mehr gesendet. Das Skript überwacht das nicht.
 - „Secret erneuern“ und „Prüfen“ zeigen nur Apps, die mit diesem Skript angelegt wurden.
 - Rückbau von Hand: App-Registrierung in Entra löschen, in Exchange die Rechte der App am Postfach und den Eintrag (`Remove-ServicePrincipal`) entfernen.
