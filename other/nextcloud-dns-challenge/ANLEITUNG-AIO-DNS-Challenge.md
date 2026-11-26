@@ -15,7 +15,7 @@ Platzhalter in dieser Anleitung: `cloud.example.de` = Nextcloud-Adresse, `<deSEC
    ```
    dig +short _acme-challenge.cloud.example.de CNAME
    ```
-   Erwartet wird `<deSEC-Ziel>`. Fehlt er, bei Strato (oder später Hetzner) anlegen:
+   Erwartet wird `<deSEC-Ziel>`. Fehlt er, beim DNS-Anbieter (derzeit Strato) anlegen:
    `_acme-challenge.cloud` → CNAME → `<deSEC-Ziel>.`
 2. **deSEC-Token** besorgen. Er braucht Schreibrechte auf die deSEC-Zone, in der `<deSEC-Ziel>` liegt.
 3. **Aktuellen Startbefehl des Mastercontainers sichern.** Eigene Optionen wie `NEXTCLOUD_DATADIR` oder `NEXTCLOUD_MOUNT` müssen später wieder rein.
